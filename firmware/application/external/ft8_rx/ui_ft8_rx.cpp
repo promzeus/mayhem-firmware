@@ -53,22 +53,28 @@ FT8RxView::FT8RxView(NavigationView& nav)
     // Configure frequency field
     field_frequency.set_step(100);  // 100 Hz steps for FT8
 
-    // Start receiver with SSB USB demodulation
-    audio::set_rate(audio::Rate::Hz_12000);
-
     // Load AM audio baseband image first (required!)
     baseband::run_image(portapack::spi_flash::image_tag_am_audio);
 
-    // Set modulation mode
+    // Set modulation mode to AM Audio (this will call update_modulation)
     receiver_model.set_modulation(ReceiverModel::Mode::AMAudio);
 
-    // Configure USB filter (index 2 = USB 2.8 kHz)
-    receiver_model.set_am_configuration(2);
+    // Set sampling rates (same as Audio RX for AM mode)
+    receiver_model.set_sampling_rate(3072000);  // 3.072 MHz
+    receiver_model.set_baseband_bandwidth(1750000);  // 1.75 MHz
 
-    audio::output::start();
+    // Enable receiver
     receiver_model.enable();
 
-    text_status.set("SSB USB enabled");
+    // Configure USB filter AFTER enable (index 2 = USB 2.8 kHz - same as Audio RX "USB+3k")
+    // This will call update_modulation again and apply the correct filter
+    receiver_model.set_am_configuration(2);
+
+    // Start audio output with 12 kHz rate (same as Audio RX for AM)
+    audio::set_rate(audio::Rate::Hz_12000);
+    audio::output::start();
+
+    text_status.set("SSB USB 2.8k");
 }
 
 void FT8RxView::on_statistics_update(const ChannelStatistics& statistics) {
