@@ -22,8 +22,6 @@
 #include "ui_ft8_rx.hpp"
 #include "baseband_api.hpp"
 #include "audio.hpp"
-#include "oversample.hpp"
-#include "ui_spectrum.hpp"
 
 using namespace portapack;
 
@@ -55,20 +53,22 @@ FT8RxView::FT8RxView(NavigationView& nav)
     // Configure frequency field
     field_frequency.set_step(100);  // 100 Hz steps for FT8
 
-    // Start receiver
+    // Start receiver with SSB USB demodulation
     audio::set_rate(audio::Rate::Hz_12000);
-    baseband::run_image(portapack::spi_flash::image_tag_capture);
-    receiver_model.set_modulation(ReceiverModel::Mode::Capture);
 
-    const uint32_t bandwidth = 3000;
-    baseband::set_sample_rate(bandwidth, get_oversample_rate(bandwidth));
+    // Load AM audio baseband image first (required!)
+    baseband::run_image(portapack::spi_flash::image_tag_am_audio);
 
-    auto actual_sampling_rate = get_actual_sample_rate(bandwidth);
-    receiver_model.set_sampling_rate(actual_sampling_rate);
-    receiver_model.set_baseband_bandwidth(filter_bandwidth_for_sampling_rate(actual_sampling_rate));
+    // Set modulation mode
+    receiver_model.set_modulation(ReceiverModel::Mode::AMAudio);
+
+    // Configure USB filter (index 2 = USB 2.8 kHz)
+    receiver_model.set_am_configuration(2);
 
     audio::output::start();
     receiver_model.enable();
+
+    text_status.set("SSB USB enabled");
 }
 
 void FT8RxView::on_statistics_update(const ChannelStatistics& statistics) {
