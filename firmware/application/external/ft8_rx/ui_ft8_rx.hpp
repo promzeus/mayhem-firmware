@@ -28,6 +28,7 @@
 #include "ui_receiver.hpp"
 #include "ui_rssi.hpp"
 #include "ui_freq_field.hpp"
+#include "ui_widget.hpp"
 #include "receiver_model.hpp"
 #include "message.hpp"
 
@@ -81,6 +82,10 @@ class FT8RxView : public View {
     Text text_status{
         {0, 1 * 16, 240, 16},
         "Listening..."};
+
+    // Console for decoded FT8 messages (lines 2-14)
+    Console console{
+        {0, 2 * 16, 240, 240 - 2 * 16}};
 
     MessageHandlerRegistration message_handler_stats{
         Message::ID::ChannelStatistics,

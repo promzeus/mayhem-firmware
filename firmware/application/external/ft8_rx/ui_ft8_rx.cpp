@@ -47,7 +47,8 @@ FT8RxView::FT8RxView(NavigationView& nav)
         &rssi,
         &field_volume,
         &field_frequency,
-        &text_status
+        &text_status,
+        &console
     });
 
     // Configure frequency field
@@ -75,6 +76,10 @@ FT8RxView::FT8RxView(NavigationView& nav)
     audio::output::start();
 
     text_status.set("SSB USB 2.8k");
+
+    // Test console output
+    console.writeln("=== FT8 RX Ready ===");
+    console.writeln("Waiting for signals...");
 }
 
 void FT8RxView::on_statistics_update(const ChannelStatistics& statistics) {
