@@ -86,4 +86,42 @@ void FT8RxView::on_statistics_update(const ChannelStatistics& statistics) {
     rssi.set_db(statistics.max_db);
 }
 
+void FT8RxView::on_ft8_packet(const FT8PacketMessage* message) {
+    // Format: "TIME SNR FROM TO GRID"
+    // Example: "1545 -12 CQ W1ABC FN42"
+
+    std::string line;
+    char time_str[8];
+    char snr_str[8];
+
+    // Format time (HH:MM format, using time_slot as minutes)
+    snprintf(time_str, sizeof(time_str), "%02d:%02d",
+             message->time_slot / 60, message->time_slot % 60);
+
+    // Format SNR with sign
+    snprintf(snr_str, sizeof(snr_str), "%+3d", message->snr);
+
+    // Build the line: "TIME SNR FROM TO GRID"
+    line = time_str;
+    line += " ";
+    line += snr_str;
+    line += " ";
+    line += message->call_from;
+
+    // Only add call_to if not empty
+    if (message->call_to[0] != '\0') {
+        line += " ";
+        line += message->call_to;
+    }
+
+    // Only add grid if not empty
+    if (message->grid[0] != '\0') {
+        line += " ";
+        line += message->grid;
+    }
+
+    // Display in console
+    console.writeln(line);
+}
+
 }  // namespace ui::external_app::ft8_rx

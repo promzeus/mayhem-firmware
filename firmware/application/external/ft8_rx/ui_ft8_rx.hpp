@@ -57,6 +57,7 @@ class FT8RxView : public View {
         app_settings::Mode::RX};
 
     void on_statistics_update(const ChannelStatistics& statistics);
+    void on_ft8_packet(const FT8PacketMessage* message);
 
     // All controls on line 0 (like AFSK RX)
     RFAmpField field_rf_amp{
@@ -91,6 +92,12 @@ class FT8RxView : public View {
         Message::ID::ChannelStatistics,
         [this](const Message* const p) {
             this->on_statistics_update(static_cast<const ChannelStatisticsMessage*>(p)->statistics);
+        }};
+
+    MessageHandlerRegistration message_handler_ft8_packet{
+        Message::ID::FT8Packet,
+        [this](const Message* const p) {
+            this->on_ft8_packet(static_cast<const FT8PacketMessage*>(p));
         }};
 };
 

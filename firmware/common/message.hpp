@@ -136,6 +136,7 @@ class Message {
         NoaaAptRxImageData = 79,
         FSKPacket = 80,
         EPIRBPacket = 81,
+        FT8Packet = 82,
         MAX
     };
 
@@ -349,6 +350,34 @@ class EPIRBPacketMessage : public Message {
     }
 
     baseband::Packet packet;
+};
+
+class FT8PacketMessage : public Message {
+   public:
+    constexpr FT8PacketMessage(
+        const char* from_call,
+        const char* to_call,
+        const char* grid_loc,
+        int8_t snr_val,
+        uint8_t time_val)
+        : Message{ID::FT8Packet},
+          snr{snr_val},
+          time_slot{time_val} {
+        // Copy strings safely
+        std::memcpy(call_from, from_call, 13);
+        std::memcpy(call_to, to_call, 13);
+        std::memcpy(grid, grid_loc, 7);
+        // Ensure null termination
+        call_from[12] = '\0';
+        call_to[12] = '\0';
+        grid[6] = '\0';
+    }
+
+    char call_from[13];  // From callsign
+    char call_to[13];    // To callsign
+    char grid[7];        // Grid locator
+    int8_t snr;          // Signal-to-noise ratio
+    uint8_t time_slot;   // Time slot (0-based, 0 = first half, 1 = second half)
 };
 
 class TPMSPacketMessage : public Message {
