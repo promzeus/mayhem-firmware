@@ -28,6 +28,19 @@
 
 #include <array>
 
+FT8RxProcessor::FT8RxProcessor() {
+    // Initialize FT8 decoder
+    if (!ft8_portapack_init(&decoder_state)) {
+        // Initialization failed - disable decoding
+        decoding_enabled = false;
+    }
+}
+
+FT8RxProcessor::~FT8RxProcessor() {
+    // Free FT8 decoder resources
+    ft8_portapack_free(&decoder_state);
+}
+
 void FT8RxProcessor::execute(const buffer_c8_t& buffer) {
     if (!configured) {
         return;
@@ -68,21 +81,39 @@ buffer_f32_t FT8RxProcessor::demodulate(const buffer_c16_t& channel) {
 }
 
 void FT8RxProcessor::process_ft8_audio(const buffer_f32_t& audio) {
-    // Accumulate audio samples
-    audio_sample_count += audio.count;
+    if (!decoding_enabled) {
+        // Fallback to test packets if decoding disabled
+        static size_t test_sample_count = 0;
+        test_sample_count += audio.count;
+        if (test_sample_count >= FT8_SAMPLES_PER_SLOT) {
+            test_sample_count = 0;
+            slot_count++;
+            send_test_packet();
+        }
+        return;
+    }
 
-    // Check if we have accumulated one FT8 slot (12.64 seconds = ~151680 samples at 12 kHz)
-    if (audio_sample_count >= FT8_SAMPLES_PER_SLOT) {
-        // Reset counter for next slot
-        audio_sample_count = 0;
-        slot_count++;
+    // Accumulate audio samples for FFT processing
+    for (size_t i = 0; i < audio.count; i++) {
+        audio_accumulator[audio_accumulator_pos++] = audio.p[i];
 
-        // Send test packet every slot
-        send_test_packet();
+        // Process when we have one FT8 symbol worth of samples (160ms @ 12kHz = 1920 samples)
+        if (audio_accumulator_pos >= FT8_FFT_SIZE) {
+            // Call ft8_portapack to process audio and update waterfall
+            bool slot_complete = ft8_portapack_process_audio(
+                &decoder_state,
+                audio_accumulator.data(),
+                audio_accumulator_pos);
 
-        // TODO Phase 3.1: Add waterfall accumulation
-        // TODO Phase 3.2: Add FFT processing
-        // TODO Phase 3.3: Call ft8_lib decoder
+            // Reset accumulator
+            audio_accumulator_pos = 0;
+
+            // If complete slot (79 symbols = 12.64s), decode
+            if (slot_complete) {
+                decode_ft8_slot();
+                slot_count++;
+            }
+        }
     }
 }
 
@@ -97,6 +128,43 @@ void FT8RxProcessor::send_test_packet() {
         slot_count % 2 // time_slot (alternating 0/1)
     );
     shared_memory.application_queue.push(message);
+}
+
+void FT8RxProcessor::decode_ft8_slot() {
+    // Call ft8_lib decoder to find and decode FT8 messages
+    int num_decoded = ft8_portapack_decode(&decoder_state);
+
+    if (num_decoded > 0) {
+        // Send decoded messages to M0
+        send_ft8_messages();
+    }
+
+    // Reset waterfall for next slot
+    ft8_portapack_reset_slot(&decoder_state);
+}
+
+void FT8RxProcessor::send_ft8_messages() {
+    // Send all decoded messages to M0 application
+    for (int i = 0; i < decoder_state.num_messages; i++) {
+        const ftx_message_t* msg = ft8_portapack_get_message(&decoder_state, i);
+        if (!msg) continue;
+
+        // TODO: Parse msg->payload to extract callsigns and grid
+        // TODO: Store SNR from candidates array alongside messages
+        // Message text format examples:
+        // "CQ DX W1ABC FN42"
+        // "W1ABC K2XYZ -12"
+        // "K2XYZ W1ABC R-15"
+
+        FT8PacketMessage packet(
+            "FT8",         // Placeholder - parse msg->payload for real callsign
+            "",            // Placeholder - parse msg->payload for target
+            "",            // Placeholder - parse msg->payload for grid
+            0,             // Placeholder - need to store SNR from candidates
+            slot_count % 2 // Time slot (0 or 1)
+        );
+        shared_memory.application_queue.push(packet);
+    }
 }
 
 void FT8RxProcessor::on_message(const Message* const message) {

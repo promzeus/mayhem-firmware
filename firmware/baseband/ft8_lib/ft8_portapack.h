@@ -81,6 +81,10 @@ typedef struct {
 
 } ft8_decoder_state_t;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // Initialize FT8 decoder
 bool ft8_portapack_init(ft8_decoder_state_t* state);
 
@@ -102,5 +106,9 @@ const ftx_message_t* ft8_portapack_get_message(ft8_decoder_state_t* state, int i
 
 // Reset decoder for new slot
 void ft8_portapack_reset_slot(ft8_decoder_state_t* state);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // _FT8_PORTAPACK_H_

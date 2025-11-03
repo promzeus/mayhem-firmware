@@ -33,9 +33,13 @@
 #include "spectrum_collector.hpp"
 
 #include "message.hpp"
+#include "ft8_lib/ft8_portapack.h"
 
 class FT8RxProcessor : public BasebandProcessor {
    public:
+    FT8RxProcessor();
+    ~FT8RxProcessor();
+
     void execute(const buffer_c8_t& buffer) override;
     void on_message(const Message* const message) override;
 
@@ -48,8 +52,7 @@ class FT8RxProcessor : public BasebandProcessor {
     static constexpr size_t decim_2_output_fs = decim_1_output_fs / 2;  // 24 kHz
     static constexpr size_t audio_fs = 12000;  // 12 kHz audio for FT8
 
-    // FT8 timing constants
-    static constexpr float FT8_SLOT_DURATION = 12.64f;  // seconds
+    // FT8 timing constants (FT8_SLOT_DURATION defined in ft8_portapack.h)
     static constexpr size_t FT8_SAMPLES_PER_SLOT = static_cast<size_t>(audio_fs * FT8_SLOT_DURATION);  // ~151680 samples
 
     // Buffers
@@ -86,9 +89,12 @@ class FT8RxProcessor : public BasebandProcessor {
     int32_t channel_filter_high_f{0};
     int32_t channel_filter_transition{0};
 
-    // FT8 accumulation buffer
-    size_t audio_sample_count{0};
+    // FT8 decoder state and buffers
+    ft8_decoder_state_t decoder_state{};
+    std::array<float, FT8_FFT_SIZE> audio_accumulator{};  // 1920 samples for FFT
+    size_t audio_accumulator_pos{0};
     uint32_t slot_count{0};
+    bool decoding_enabled{true};  // Enable/disable FT8 decoding
 
     // Message handlers
     void configure(const AMConfigureMessage& message);
@@ -97,7 +103,9 @@ class FT8RxProcessor : public BasebandProcessor {
 
     // FT8 processing
     void process_ft8_audio(const buffer_f32_t& audio);
-    void send_test_packet();  // For initial testing
+    void decode_ft8_slot();          // Decode complete FT8 slot
+    void send_ft8_messages();        // Send decoded messages to M0
+    void send_test_packet();         // For fallback testing
 
     /* NB: Threads should be the last members in the class definition. */
     BasebandThread baseband_thread{baseband_fs, this, baseband::Direction::Receive};
