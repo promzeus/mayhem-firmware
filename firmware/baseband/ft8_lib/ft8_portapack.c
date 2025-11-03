@@ -25,6 +25,79 @@ static WF_ELEM_T waterfall_buffer[FT8_WATERFALL_SIZE];
 static float fft_input[FT8_FFT_SIZE];
 static float fft_output[FT8_FFT_SIZE * 2];
 
+// Radix-2 FFT helper functions
+
+// Bit-reversal permutation for FFT
+static inline unsigned int reverse_bits(unsigned int x, int log2n) {
+    unsigned int result = 0;
+    for (int i = 0; i < log2n; i++) {
+        result = (result << 1) | (x & 1);
+        x >>= 1;
+    }
+    return result;
+}
+
+// In-place Radix-2 Cooley-Tukey FFT
+// Input: complex array in fft_output (interleaved real/imag)
+// Size: FT8_FFT_SIZE must be power of 2
+static void radix2_fft(float* data, int n) {
+    const int log2n = 11;  // log2(2048) = 11
+
+    // Bit-reversal permutation
+    for (int i = 0; i < n; i++) {
+        int j = reverse_bits(i, log2n);
+        if (j > i) {
+            // Swap complex numbers
+            float temp_real = data[i * 2];
+            float temp_imag = data[i * 2 + 1];
+            data[i * 2] = data[j * 2];
+            data[i * 2 + 1] = data[j * 2 + 1];
+            data[j * 2] = temp_real;
+            data[j * 2 + 1] = temp_imag;
+        }
+    }
+
+    // Cooley-Tukey FFT
+    for (int s = 1; s <= log2n; s++) {
+        int m = 1 << s;  // 2^s
+        int m2 = m >> 1;  // m/2
+
+        // Twiddle factor: e^(-2πi/m)
+        float theta = -2.0f * 3.14159265358979323846f / m;
+        float wm_real = cosf(theta);
+        float wm_imag = sinf(theta);
+
+        for (int k = 0; k < n; k += m) {
+            float w_real = 1.0f;
+            float w_imag = 0.0f;
+
+            for (int j = 0; j < m2; j++) {
+                int t_idx = (k + j + m2) * 2;
+                int u_idx = (k + j) * 2;
+
+                // Complex multiplication: t = w * data[k + j + m/2]
+                float t_real = w_real * data[t_idx] - w_imag * data[t_idx + 1];
+                float t_imag = w_real * data[t_idx + 1] + w_imag * data[t_idx];
+
+                // Butterfly operation
+                float u_real = data[u_idx];
+                float u_imag = data[u_idx + 1];
+
+                data[u_idx] = u_real + t_real;
+                data[u_idx + 1] = u_imag + t_imag;
+                data[t_idx] = u_real - t_real;
+                data[t_idx + 1] = u_imag - t_imag;
+
+                // Update twiddle factor: w *= wm
+                float w_new_real = w_real * wm_real - w_imag * wm_imag;
+                float w_new_imag = w_real * wm_imag + w_imag * wm_real;
+                w_real = w_new_real;
+                w_imag = w_new_imag;
+            }
+        }
+    }
+}
+
 // Initialize FT8 decoder
 bool ft8_portapack_init(ft8_decoder_state_t* state) {
     if (!state) return false;
@@ -82,35 +155,18 @@ bool ft8_portapack_process_audio(ft8_decoder_state_t* state,
         fft_input[i] = audio_buffer[i] * window;
     }
 
-    // Perform FFT using CMSIS-DSP (if available)
-    // CMSIS-DSP not available in current Portapack build, use fallback DFT
-#if 0  // Disabled: CMSIS-DSP not available
-    // Use optimized CMSIS-DSP real FFT
-    arm_rfft_fast_instance_f32 fft_instance;
-    arm_status status = arm_rfft_fast_init_f32(&fft_instance, FT8_FFT_SIZE);
-
-    if (status == ARM_MATH_SUCCESS) {
-        arm_rfft_fast_f32(&fft_instance, fft_input, fft_output, 0);  // 0 = FFT (not IFFT)
-    } else {
-        return false;
+    // Perform FFT: Convert real input to complex, then run Radix-2 FFT
+    // Copy windowed real audio to complex buffer (real part only, imag = 0)
+    for (int i = 0; i < FT8_FFT_SIZE; i++) {
+        fft_output[i * 2] = fft_input[i];      // Real part
+        fft_output[i * 2 + 1] = 0.0f;          // Imaginary part = 0
     }
-#else
-    // Fallback: simple DFT for testing
-    // TODO: Optimize with CMSIS-DSP or custom optimized FFT
-    for (int k = 0; k < FT8_FFT_SIZE / 2; k++) {
-        float real = 0.0f;
-        float imag = 0.0f;
 
-        for (int n = 0; n < FT8_FFT_SIZE; n++) {
-            float angle = 2.0f * 3.14159265f * k * n / FT8_FFT_SIZE;
-            real += fft_input[n] * cosf(angle);
-            imag -= fft_input[n] * sinf(angle);
-        }
+    // Execute optimized Radix-2 FFT (O(n log n) instead of O(n²))
+    radix2_fft(fft_output, FT8_FFT_SIZE);
 
-        fft_output[k * 2] = real;
-        fft_output[k * 2 + 1] = imag;
-    }
-#endif
+    // Output is now in fft_output[]: [Re0, Im0, Re1, Im1, ..., Re2047, Im2047]
+    // We only need the first FT8_FFT_SIZE/2 bins (DC to Nyquist)
 
     // Calculate magnitudes and store in waterfall
     int block_offset = state->waterfall.num_blocks * state->waterfall.block_stride;

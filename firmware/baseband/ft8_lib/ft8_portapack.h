@@ -30,7 +30,7 @@
 
 // Audio processing parameters
 #define FT8_SAMPLE_RATE        12000     // Decimated sample rate for FT8 (from 2457600)
-#define FT8_FFT_SIZE           1920      // FFT size for 6.25 Hz bins (12000 / 6.25)
+#define FT8_FFT_SIZE           2048      // FFT size (power of 2 for Radix-2 FFT, 5.86 Hz/bin)
 #define FT8_NUM_BINS           200       // Frequency bins (REDUCED from 400 to save RAM)
 #define FT8_FREQ_MIN           200.0f    // Minimum frequency (Hz)
 #define FT8_FREQ_MAX           1450.0f   // Maximum frequency (Hz) - reduced range
