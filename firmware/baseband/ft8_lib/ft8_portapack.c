@@ -25,74 +25,33 @@ static WF_ELEM_T waterfall_buffer[FT8_WATERFALL_SIZE];
 static float fft_input[FT8_FFT_SIZE];
 static float fft_output[FT8_FFT_SIZE * 2];
 
-// Radix-2 FFT helper functions
-
-// Bit-reversal permutation for FFT
-static inline unsigned int reverse_bits(unsigned int x, int log2n) {
-    unsigned int result = 0;
-    for (int i = 0; i < log2n; i++) {
-        result = (result << 1) | (x & 1);
-        x >>= 1;
-    }
-    return result;
-}
-
-// In-place Radix-2 Cooley-Tukey FFT
-// Input: complex array in fft_output (interleaved real/imag)
-// Size: FT8_FFT_SIZE must be power of 2
-static void radix2_fft(float* data, int n) {
-    const int log2n = 11;  // log2(2048) = 11
-
-    // Bit-reversal permutation
-    for (int i = 0; i < n; i++) {
-        int j = reverse_bits(i, log2n);
+// Compact Radix-2 FFT for 2048 points
+static void radix2_fft(float* d, int n) {
+    // Bit-reversal
+    for (int i = 1, j = 0; i < n; i++) {
+        for (int k = n >> 1; k > (j ^= k); k >>= 1);
         if (j > i) {
-            // Swap complex numbers
-            float temp_real = data[i * 2];
-            float temp_imag = data[i * 2 + 1];
-            data[i * 2] = data[j * 2];
-            data[i * 2 + 1] = data[j * 2 + 1];
-            data[j * 2] = temp_real;
-            data[j * 2 + 1] = temp_imag;
+            float tr = d[i * 2], ti = d[i * 2 + 1];
+            d[i * 2] = d[j * 2]; d[i * 2 + 1] = d[j * 2 + 1];
+            d[j * 2] = tr; d[j * 2 + 1] = ti;
         }
     }
-
-    // Cooley-Tukey FFT
-    for (int s = 1; s <= log2n; s++) {
-        int m = 1 << s;  // 2^s
-        int m2 = m >> 1;  // m/2
-
-        // Twiddle factor: e^(-2πi/m)
-        float theta = -2.0f * 3.14159265358979323846f / m;
-        float wm_real = cosf(theta);
-        float wm_imag = sinf(theta);
-
+    // Cooley-Tukey butterfly
+    for (int s = 1; s <= 11; s++) {
+        int m = 1 << s, m2 = m >> 1;
+        float a = -6.283185307f / m, wr = cosf(a), wi = sinf(a);
         for (int k = 0; k < n; k += m) {
-            float w_real = 1.0f;
-            float w_imag = 0.0f;
-
+            float w_r = 1.0f, w_i = 0.0f;
             for (int j = 0; j < m2; j++) {
-                int t_idx = (k + j + m2) * 2;
-                int u_idx = (k + j) * 2;
-
-                // Complex multiplication: t = w * data[k + j + m/2]
-                float t_real = w_real * data[t_idx] - w_imag * data[t_idx + 1];
-                float t_imag = w_real * data[t_idx + 1] + w_imag * data[t_idx];
-
-                // Butterfly operation
-                float u_real = data[u_idx];
-                float u_imag = data[u_idx + 1];
-
-                data[u_idx] = u_real + t_real;
-                data[u_idx + 1] = u_imag + t_imag;
-                data[t_idx] = u_real - t_real;
-                data[t_idx + 1] = u_imag - t_imag;
-
-                // Update twiddle factor: w *= wm
-                float w_new_real = w_real * wm_real - w_imag * wm_imag;
-                float w_new_imag = w_real * wm_imag + w_imag * wm_real;
-                w_real = w_new_real;
-                w_imag = w_new_imag;
+                int ti = (k + j + m2) * 2, ui = (k + j) * 2;
+                float tr = w_r * d[ti] - w_i * d[ti + 1];
+                float t_i = w_r * d[ti + 1] + w_i * d[ti];
+                float u_r = d[ui], u_i = d[ui + 1];
+                d[ui] = u_r + tr; d[ui + 1] = u_i + t_i;
+                d[ti] = u_r - tr; d[ti + 1] = u_i - t_i;
+                float wnr = w_r * wr - w_i * wi;
+                w_i = w_r * wi + w_i * wr;
+                w_r = wnr;
             }
         }
     }
@@ -172,20 +131,11 @@ bool ft8_portapack_process_audio(ft8_decoder_state_t* state,
     int block_offset = state->waterfall.num_blocks * state->waterfall.block_stride;
 
     for (int bin = 0; bin < FT8_NUM_BINS && bin < FT8_FFT_SIZE / 2; bin++) {
-        float real = fft_output[bin * 2];
-        float imag = fft_output[bin * 2 + 1];
-        float magnitude = sqrtf(real * real + imag * imag);
-
-        // Convert to log scale and quantize to uint8_t
-        // magnitude in dB = 20 * log10(magnitude)
-        float magnitude_db = 20.0f * log10f(magnitude + 1e-10f);
-
-        // Map to 0-255 range (assuming -120dB to 0dB)
-        int mag_int = (int)((magnitude_db + 120.0f) * 2.0f);
-        if (mag_int < 0) mag_int = 0;
-        if (mag_int > 255) mag_int = 255;
-
-        state->waterfall.mag[block_offset + bin] = (WF_ELEM_T)mag_int;
+        float r = fft_output[bin * 2], im = fft_output[bin * 2 + 1];
+        float mag = 20.0f * log10f(sqrtf(r * r + im * im) + 1e-10f);
+        int m = (int)((mag + 120.0f) * 2.0f);
+        m = (m < 0) ? 0 : (m > 255) ? 255 : m;
+        state->waterfall.mag[block_offset + bin] = (WF_ELEM_T)m;
     }
 
     state->waterfall.num_blocks++;
@@ -208,21 +158,13 @@ int ft8_portapack_decode(ft8_decoder_state_t* state) {
                                                   state->candidates,
                                                   50);  // min_score threshold
 
-    // Try to decode each candidate
+    // Decode candidates
     for (int i = 0; i < state->num_candidates && state->num_messages < FT8_MAX_MESSAGES; i++) {
-        ftx_message_t message;
-        ftx_decode_status_t status;
-
-        bool success = ftx_decode_candidate(&state->waterfall,
-                                              &state->candidates[i],
-                                              FT8_LDPC_ITERATIONS,
-                                              &message,
-                                              &status);
-
-        if (success && status.ldpc_errors == 0) {
-            // Valid decode
-            state->messages[state->num_messages] = message;
-            state->num_messages++;
+        ftx_message_t msg;
+        ftx_decode_status_t st;
+        if (ftx_decode_candidate(&state->waterfall, &state->candidates[i],
+                                  FT8_LDPC_ITERATIONS, &msg, &st) && st.ldpc_errors == 0) {
+            state->messages[state->num_messages++] = msg;
             state->decode_count++;
         }
     }
@@ -233,22 +175,12 @@ int ft8_portapack_decode(ft8_decoder_state_t* state) {
     return state->num_messages;
 }
 
-// Get decoded message
 const ftx_message_t* ft8_portapack_get_message(ft8_decoder_state_t* state, int index) {
-    if (!state || index < 0 || index >= state->num_messages) {
-        return NULL;
-    }
-    return &state->messages[index];
+    return (!state || index < 0 || index >= state->num_messages) ? NULL : &state->messages[index];
 }
 
-// Reset for new slot
 void ft8_portapack_reset_slot(ft8_decoder_state_t* state) {
     if (!state) return;
-
-    state->waterfall.num_blocks = 0;
-    state->num_candidates = 0;
-    state->num_messages = 0;
-
-    // Clear waterfall buffer
+    state->waterfall.num_blocks = state->num_candidates = state->num_messages = 0;
     memset(state->waterfall.mag, 0, FT8_WATERFALL_SIZE);
 }
