@@ -126,10 +126,10 @@ void FT8RxProcessor::configure(const AMConfigureMessage& message) {
     constexpr size_t decim_1_input_fs = decim_0_output_fs;
     constexpr size_t decim_1_output_fs = decim_1_input_fs / decim_1.decimation_factor;
 
-    constexpr size_t decim_2_input_fs = decim_1_output_fs;
-    constexpr size_t decim_2_output_fs = decim_2_input_fs / decim_2_decimation_factor;
+    const size_t decim_2_input_fs = decim_1_output_fs;
+    const size_t decim_2_output_fs = decim_2_input_fs / decim_2_decimation_factor;
 
-    constexpr size_t channel_filter_input_fs = decim_2_output_fs;
+    const size_t channel_filter_input_fs = decim_2_output_fs;
 
     // Configure decimation filters
     decim_0.configure(message.decim_0_filter.taps);

@@ -62,7 +62,7 @@ __attribute__((section(".external_app.app_ft8_rx.application_information"), used
     /*.menu_location = */ app_location_t::RX,
     /*.desired_menu_position = */ -1,
 
-    /*.m4_app_tag = portapack::spi_flash::image_tag_capture */ {'P', 'C', 'A', 'P'},
+    /*.m4_app_tag = portapack::spi_flash::image_tag_ft8_rx */ {'P', 'F', 'T', '8'},
     /*.m4_app_offset = */ 0x00000000,  // will be filled at compile time
 };
 }
