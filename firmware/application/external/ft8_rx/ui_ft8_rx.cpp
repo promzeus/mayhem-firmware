@@ -54,8 +54,8 @@ FT8RxView::FT8RxView(NavigationView& nav)
     // Configure frequency field
     field_frequency.set_step(100);  // 100 Hz steps for FT8
 
-    // Load AM audio baseband image first (required!)
-    baseband::run_image(portapack::spi_flash::image_tag_am_audio);
+    // Load FT8 RX baseband image (with FT8 decoder)
+    baseband::run_image(portapack::spi_flash::image_tag_ft8_rx);
 
     // Set modulation mode to AM Audio (this will call update_modulation)
     receiver_model.set_modulation(ReceiverModel::Mode::AMAudio);

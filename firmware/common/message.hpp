@@ -354,23 +354,31 @@ class EPIRBPacketMessage : public Message {
 
 class FT8PacketMessage : public Message {
    public:
-    constexpr FT8PacketMessage(
+    FT8PacketMessage(
         const char* from_call,
         const char* to_call,
         const char* grid_loc,
         int8_t snr_val,
         uint8_t time_val)
         : Message{ID::FT8Packet},
+          call_from{},
+          call_to{},
+          grid{},
           snr{snr_val},
           time_slot{time_val} {
-        // Copy strings safely
-        std::memcpy(call_from, from_call, 13);
-        std::memcpy(call_to, to_call, 13);
-        std::memcpy(grid, grid_loc, 7);
-        // Ensure null termination
-        call_from[12] = '\0';
-        call_to[12] = '\0';
-        grid[6] = '\0';
+        // Copy strings safely with bounds checking
+        if (from_call) {
+            std::strncpy(call_from, from_call, 12);
+            call_from[12] = '\0';
+        }
+        if (to_call) {
+            std::strncpy(call_to, to_call, 12);
+            call_to[12] = '\0';
+        }
+        if (grid_loc) {
+            std::strncpy(grid, grid_loc, 6);
+            grid[6] = '\0';
+        }
     }
 
     char call_from[13];  // From callsign

@@ -368,6 +368,20 @@ set(MODE_CPPSRC
 )
 DeclareTargets(PAMA am_audio)
 
+### FT8 RX
+
+set(MODE_CPPSRC
+	proc_ft8_rx.cpp
+	ft8_lib/constants.c
+	ft8_lib/crc.c
+	ft8_lib/decode.c
+	ft8_lib/ft8_portapack.c
+	ft8_lib/ldpc.c
+	ft8_lib/ldpc_opt.c
+	ft8_lib/message.c
+	ft8_lib/text.c
+)
+DeclareTargets(PFT8 ft8_rx)
 
 ### Capture
 
