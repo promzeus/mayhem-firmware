@@ -21,6 +21,7 @@
 
 #include "proc_ft8_rx.hpp"
 #include "portapack_shared_memory.hpp"
+#include "audio_dma.hpp"
 #include "event_m4.hpp"
 
 FT8RxProcessor::FT8RxProcessor() {
