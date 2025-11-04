@@ -97,7 +97,6 @@ class FT8RxProcessor : public BasebandProcessor {
     bool decoding_enabled{true};  // Enable/disable FT8 decoding
 
     // Message handlers
-    void configure(const AMConfigureMessage& message);
     void capture_config(const CaptureConfigMessage& message);
     buffer_f32_t demodulate(const buffer_c16_t& channel);
 

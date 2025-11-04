@@ -22,12 +22,21 @@
 #include "proc_ft8_rx.hpp"
 #include "portapack_shared_memory.hpp"
 #include "audio_dma.hpp"
+#include "dsp_fir_taps.hpp"
 #include "event_m4.hpp"
 
 FT8RxProcessor::FT8RxProcessor() {
+    decim_0.configure(taps_11k0_decim_0.taps);
+    decim_1.configure(taps_11k0_decim_1.taps);
+    decim_2.configure(taps_11k0_channel.taps, decim_2_decimation_factor);
+    channel_filter.configure(taps_11k0_channel.taps, channel_filter_decimation_factor);
+    audio_output.configure(false);
+
     if (!ft8_portapack_init(&decoder_state)) {
         decoding_enabled = false;
     }
+
+    configured = true;  // Ready to process!
 }
 
 FT8RxProcessor::~FT8RxProcessor() {
@@ -105,10 +114,6 @@ void FT8RxProcessor::on_message(const Message* const message) {
             channel_spectrum.on_message(message);
             break;
 
-        case Message::ID::AMConfigure:
-            configure(*reinterpret_cast<const AMConfigureMessage*>(message));
-            break;
-
         case Message::ID::CaptureConfig:
             capture_config(*reinterpret_cast<const CaptureConfigMessage*>(message));
             break;
@@ -116,23 +121,6 @@ void FT8RxProcessor::on_message(const Message* const message) {
         default:
             break;
     }
-}
-
-void FT8RxProcessor::configure(const AMConfigureMessage& message) {
-    constexpr size_t decim_0_output_fs = baseband_fs / decim_0.decimation_factor;
-    constexpr size_t decim_1_output_fs = decim_0_output_fs / decim_1.decimation_factor;
-    const size_t decim_2_output_fs = decim_1_output_fs / decim_2_decimation_factor;
-    decim_0.configure(message.decim_0_filter.taps);
-    decim_1.configure(message.decim_1_filter.taps);
-    decim_2.configure(message.decim_2_filter.taps, decim_2_decimation_factor);
-    channel_filter.configure(message.channel_filter.taps, channel_filter_decimation_factor);
-    channel_filter_low_f = message.channel_filter.low_frequency_normalized * decim_2_output_fs;
-    channel_filter_high_f = message.channel_filter.high_frequency_normalized * decim_2_output_fs;
-    channel_filter_transition = message.channel_filter.transition_normalized * decim_2_output_fs;
-    modulation_ssb = (int)message.modulation;
-    channel_spectrum.set_decimation_factor(message.channel_spectrum_decimation_factor);
-    audio_output.configure(message.audio_hpf_lpf_config);
-    configured = true;
 }
 
 void FT8RxProcessor::capture_config(const CaptureConfigMessage& message) {
