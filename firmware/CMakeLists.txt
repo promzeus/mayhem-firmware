@@ -48,6 +48,7 @@ if(NOT ${CMAKE_CXX_COMPILER_VERSION} VERSION_EQUAL ${EXPECTED_GCC_VERSION})
 	set(GCC_VERSION_MISMATCH 1)
 endif()
 
+include_directories(${PROJECT_SOURCE_DIR}/baseband/ft8)
 add_subdirectory(application)
 add_subdirectory(baseband)
 add_subdirectory(standalone)

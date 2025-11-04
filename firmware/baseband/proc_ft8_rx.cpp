@@ -20,13 +20,8 @@
  */
 
 #include "proc_ft8_rx.hpp"
-
-#include "audio_output.hpp"
-#include "audio_dma.hpp"
-#include "event_m4.hpp"
 #include "portapack_shared_memory.hpp"
-
-#include <array>
+#include "event_m4.hpp"
 
 FT8RxProcessor::FT8RxProcessor() {
     if (!ft8_portapack_init(&decoder_state)) {
@@ -97,8 +92,6 @@ void FT8RxProcessor::decode_ft8_slot() {
 
 void FT8RxProcessor::send_ft8_messages() {
     for (int i = 0; i < decoder_state.num_messages; i++) {
-        const ftx_message_t* msg = ft8_portapack_get_message(&decoder_state, i);
-        if (!msg) continue;
         FT8PacketMessage packet("FT8", "", "", 0, slot_count % 2);
         shared_memory.application_queue.push(packet);
     }

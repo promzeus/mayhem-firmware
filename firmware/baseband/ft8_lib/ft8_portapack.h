@@ -101,9 +101,6 @@ bool ft8_portapack_process_audio(ft8_decoder_state_t* state,
 // Returns number of successfully decoded messages
 int ft8_portapack_decode(ft8_decoder_state_t* state);
 
-// Get decoded message
-const ftx_message_t* ft8_portapack_get_message(ft8_decoder_state_t* state, int index);
-
 // Reset decoder for new slot
 void ft8_portapack_reset_slot(ft8_decoder_state_t* state);
 

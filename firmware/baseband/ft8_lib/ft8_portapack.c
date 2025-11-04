@@ -175,10 +175,6 @@ int ft8_portapack_decode(ft8_decoder_state_t* state) {
     return state->num_messages;
 }
 
-const ftx_message_t* ft8_portapack_get_message(ft8_decoder_state_t* state, int index) {
-    return (!state || index < 0 || index >= state->num_messages) ? NULL : &state->messages[index];
-}
-
 void ft8_portapack_reset_slot(ft8_decoder_state_t* state) {
     if (!state) return;
     state->waterfall.num_blocks = state->num_candidates = state->num_messages = 0;
