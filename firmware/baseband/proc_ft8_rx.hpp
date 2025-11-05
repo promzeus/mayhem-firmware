@@ -46,14 +46,13 @@ class FT8RxProcessor : public BasebandProcessor {
    private:
     static constexpr size_t baseband_fs = 3072000;  // 3.072 MHz input
 
-    // Decimation chain: 3.072 MHz → 48 kHz → 24 kHz → 12 kHz
+    // Decimation chain: 3.072 MHz → 384 kHz → 48 kHz → 24 kHz (like AFSK RX)
     static constexpr size_t decim_0_output_fs = baseband_fs / 8;  // 384 kHz
     static constexpr size_t decim_1_output_fs = decim_0_output_fs / 8;  // 48 kHz
-    static constexpr size_t decim_2_output_fs = decim_1_output_fs / 2;  // 24 kHz
-    static constexpr size_t audio_fs = 12000;  // 12 kHz audio for FT8
+    static constexpr size_t audio_fs = 24000;  // 24 kHz audio (48k / 2 via channel_filter)
 
     // FT8 timing constants (FT8_SLOT_DURATION and FT8_SAMPLES_PER_SYMBOL defined in ft8_portapack.h)
-    static constexpr size_t FT8_SAMPLES_PER_SLOT = static_cast<size_t>(audio_fs * FT8_SLOT_DURATION);  // ~151680 samples
+    static constexpr size_t FT8_SAMPLES_PER_SLOT = static_cast<size_t>(audio_fs * FT8_SLOT_DURATION);  // ~303360 samples
 
     // Buffers
     std::array<complex16_t, 512> dst{};
@@ -66,11 +65,10 @@ class FT8RxProcessor : public BasebandProcessor {
         audio.data(),
         audio.size()};
 
-    // Decimation chain
+    // Decimation chain (like AFSK RX: 8x8x2 = 128x total)
     dsp::decimate::FIRC8xR16x24FS4Decim8 decim_0{};
     dsp::decimate::FIRC16xR16x32Decim8 decim_1{};
-    dsp::decimate::FIRAndDecimateComplex decim_2{};
-    dsp::decimate::FIRAndDecimateComplex channel_filter{};
+    dsp::decimate::FIRAndDecimateComplex channel_filter{};  // decimation=2 -> 24kHz output
 
     // Demodulators
     dsp::demodulate::AM demod_am{};
@@ -83,15 +81,13 @@ class FT8RxProcessor : public BasebandProcessor {
     // Configuration
     bool configured{false};
     int modulation_ssb{1};  // 1 = SSB mode for FT8
-    uint32_t decim_2_decimation_factor{2};
-    uint32_t channel_filter_decimation_factor{2};  // Changed 1→2 to get 12 kHz (24/2)
     int32_t channel_filter_low_f{0};
     int32_t channel_filter_high_f{0};
     int32_t channel_filter_transition{0};
 
     // FT8 decoder state and buffers
     ft8_decoder_state_t decoder_state{};
-    std::array<float, FT8_FFT_SIZE> audio_accumulator{};  // 1920 samples for FFT
+    std::array<float, FT8_FFT_SIZE> audio_accumulator{};  // 1920 samples @ 12kHz (decimated from 24kHz input)
     size_t audio_accumulator_pos{0};
     uint32_t slot_count{0};
     bool decoding_enabled{true};  // Enable/disable FT8 decoding
@@ -102,7 +98,7 @@ class FT8RxProcessor : public BasebandProcessor {
 
     // FT8 processing
     void process_ft8_audio(const buffer_f32_t& audio);
-    void decode_ft8_slot(float rms_level);  // Decode complete FT8 slot with audio RMS
+    void decode_ft8_slot(float rms_level, size_t samples_in_slot, size_t chunk_size, size_t num_chunks);
     void send_ft8_messages();        // Send decoded messages to M0
     void send_test_packet();         // For fallback testing
 

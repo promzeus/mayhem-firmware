@@ -29,7 +29,8 @@
 #define FT8_SYMBOL_RATE        6.25f     // Symbols per second
 
 // Audio processing parameters
-#define FT8_SAMPLE_RATE        12000     // Decimated sample rate for FT8 (from 2457600)
+// Note: Input is 24kHz but we decimate to 12kHz in software for FFT (to save memory)
+#define FT8_SAMPLE_RATE        12000     // FFT sample rate (decimated from 24kHz input)
 #define FT8_SAMPLES_PER_SYMBOL 1920      // 160ms * 12kHz = 1920 samples per symbol
 #define FT8_FFT_SIZE           2048      // FFT size (power of 2 for Radix-2 FFT, 5.86 Hz/bin)
 #define FT8_NUM_BINS           200       // Frequency bins (REDUCED from 400 to save RAM)
