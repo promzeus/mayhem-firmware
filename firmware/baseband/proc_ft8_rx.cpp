@@ -36,7 +36,7 @@ FT8RxProcessor::FT8RxProcessor() {
         decoding_enabled = false;
     }
 
-    configured = true;  // Ready to process!
+    configured = true;
 }
 
 FT8RxProcessor::~FT8RxProcessor() {
@@ -75,10 +75,13 @@ void FT8RxProcessor::process_ft8_audio(const buffer_f32_t& audio) {
 
     for (size_t i = 0; i < audio.count; i++) {
         audio_accumulator[audio_accumulator_pos++] = audio.p[i];
-        if (audio_accumulator_pos >= FT8_FFT_SIZE) {
+        // Process FFT every 1920 samples (one FT8 symbol = 160ms)
+        if (audio_accumulator_pos >= FT8_SAMPLES_PER_SYMBOL) {
+            // Zero-padding to 2048 is handled inside ft8_portapack_process_audio()
             bool slot_complete = ft8_portapack_process_audio(
                 &decoder_state, audio_accumulator.data(), audio_accumulator_pos);
             audio_accumulator_pos = 0;
+
             if (slot_complete) {
                 decode_ft8_slot();
                 slot_count++;
@@ -94,6 +97,12 @@ void FT8RxProcessor::send_test_packet() {
 
 void FT8RxProcessor::decode_ft8_slot() {
     int num_decoded = ft8_portapack_decode(&decoder_state);
+
+    // ALWAYS send debug info showing waterfall blocks and candidates
+    // SNR field = num_candidates (0-50), time_slot = waterfall blocks (should be 79)
+    FT8PacketMessage debug("WF", "BLKS", "", decoder_state.num_candidates, decoder_state.waterfall.num_blocks);
+    shared_memory.application_queue.push(debug);
+
     if (num_decoded > 0) {
         send_ft8_messages();
     }
@@ -132,8 +141,6 @@ void FT8RxProcessor::capture_config(const CaptureConfigMessage& message) {
 }
 
 int main() {
-    audio::dma::init_audio_out();
-
     EventDispatcher event_dispatcher{std::make_unique<FT8RxProcessor>()};
     event_dispatcher.run();
     return 0;

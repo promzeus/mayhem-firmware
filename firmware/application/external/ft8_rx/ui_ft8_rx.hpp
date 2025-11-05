@@ -45,9 +45,9 @@ class FT8RxView : public View {
    private:
     NavigationView& nav_;
 
-    // FT8 на 40m: 7.074 MHz
+    // FT8 на 80m: 3.574 MHz (можно также 7.074 MHz для 40m)
     RxRadioState radio_state_{
-        7074000 /* frequency */,
+        3574000 /* frequency */,
         3000 /* bandwidth */,
         12000 /* sampling rate */
     };

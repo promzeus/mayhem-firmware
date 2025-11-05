@@ -30,6 +30,7 @@
 
 // Audio processing parameters
 #define FT8_SAMPLE_RATE        12000     // Decimated sample rate for FT8 (from 2457600)
+#define FT8_SAMPLES_PER_SYMBOL 1920      // 160ms * 12kHz = 1920 samples per symbol
 #define FT8_FFT_SIZE           2048      // FFT size (power of 2 for Radix-2 FFT, 5.86 Hz/bin)
 #define FT8_NUM_BINS           200       // Frequency bins (REDUCED from 400 to save RAM)
 #define FT8_FREQ_MIN           200.0f    // Minimum frequency (Hz)
@@ -38,7 +39,7 @@
 // Memory optimization
 #define FT8_MAX_CANDIDATES     50        // Maximum decode candidates
 #define FT8_MAX_MESSAGES       10        // Maximum messages per slot
-#define FT8_LDPC_ITERATIONS    20        // LDPC iterations (vs 25 in PC version)
+#define FT8_LDPC_ITERATIONS    10        // LDPC iterations (reduced for stability)
 
 // Waterfall buffer configuration
 // For one FT8 slot: 79 symbols × 160ms = 12.64 seconds

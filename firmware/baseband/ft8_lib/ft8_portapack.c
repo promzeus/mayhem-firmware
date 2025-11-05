@@ -25,6 +25,27 @@ static WF_ELEM_T waterfall_buffer[FT8_WATERFALL_SIZE];
 static float fft_input[FT8_FFT_SIZE];
 static float fft_output[FT8_FFT_SIZE * 2];
 
+// Cosine lookup table for Hamming window (256 entries = 1KB, interpolated)
+static float cos_lut[256];
+
+// Fast cosine using lookup table with linear interpolation
+static inline float fast_cos(float x) {
+    // Normalize x to [0, 1] range (0 to 2*pi -> 0 to 1)
+    float norm = x / (2.0f * 3.14159265f);
+    norm = norm - (int)norm;  // Keep fractional part
+    if (norm < 0.0f) norm += 1.0f;
+
+    // Map to LUT index (0-255)
+    float idx_f = norm * 255.0f;
+    int idx = (int)idx_f;
+    float frac = idx_f - idx;
+
+    // Linear interpolation between two LUT values
+    float v0 = cos_lut[idx];
+    float v1 = cos_lut[(idx + 1) & 0xFF];  // Wrap around
+    return v0 + (v1 - v0) * frac;
+}
+
 // Compact Radix-2 FFT for 2048 points
 static void radix2_fft(float* d, int n) {
     // Bit-reversal
@@ -77,6 +98,12 @@ bool ft8_portapack_init(ft8_decoder_state_t* state) {
     state->initialized = true;
     state->decoding_active = false;
 
+    // Initialize cosine lookup table for fast windowing
+    const float pi = 3.14159265f;
+    for (int i = 0; i < 256; i++) {
+        cos_lut[i] = cosf(2.0f * pi * i / 256.0f);
+    }
+
     return true;
 }
 
@@ -102,16 +129,23 @@ bool ft8_portapack_process_audio(ft8_decoder_state_t* state,
         return true;
     }
 
-    // Ensure we have enough samples for FFT
-    if (buffer_size < FT8_FFT_SIZE) {
+    // Ensure we have at least one FT8 symbol worth of samples (1920)
+    // We'll zero-pad to FT8_FFT_SIZE (2048) if needed
+    if (buffer_size < FT8_SAMPLES_PER_SYMBOL) {
         return false;
     }
 
-    // Copy audio to FFT input buffer with windowing (Hamming)
-    for (size_t i = 0; i < FT8_FFT_SIZE && i < buffer_size; i++) {
+    // Copy audio to FFT input buffer with Hamming window using fast LUT
+    size_t copy_size = (buffer_size < FT8_FFT_SIZE) ? buffer_size : FT8_FFT_SIZE;
+    const float pi = 3.14159265f;
+    for (size_t i = 0; i < copy_size; i++) {
         // Hamming window: 0.54 - 0.46 * cos(2*pi*i/N)
-        float window = 0.54f - 0.46f * cosf(2.0f * 3.14159265f * i / FT8_FFT_SIZE);
+        float window = 0.54f - 0.46f * fast_cos(2.0f * pi * i / FT8_FFT_SIZE);
         fft_input[i] = audio_buffer[i] * window;
+    }
+    // Zero-pad if needed
+    for (size_t i = copy_size; i < FT8_FFT_SIZE; i++) {
+        fft_input[i] = 0.0f;
     }
 
     // Perform FFT: Convert real input to complex, then run Radix-2 FFT
@@ -127,13 +161,15 @@ bool ft8_portapack_process_audio(ft8_decoder_state_t* state,
     // Output is now in fft_output[]: [Re0, Im0, Re1, Im1, ..., Re2047, Im2047]
     // We only need the first FT8_FFT_SIZE/2 bins (DC to Nyquist)
 
-    // Calculate magnitudes and store in waterfall
+    // Calculate power spectrum (r² + i²) and store in waterfall
+    // Using power instead of magnitude to avoid slow sqrtf() and log10f()
     int block_offset = state->waterfall.num_blocks * state->waterfall.block_stride;
 
     for (int bin = 0; bin < FT8_NUM_BINS && bin < FT8_FFT_SIZE / 2; bin++) {
         float r = fft_output[bin * 2], im = fft_output[bin * 2 + 1];
-        float mag = 20.0f * log10f(sqrtf(r * r + im * im) + 1e-10f);
-        int m = (int)((mag + 120.0f) * 2.0f);
+        float power = r * r + im * im;
+        // Scale to 0-255 range (empirical scaling)
+        int m = (int)(power * 0.01f);
         m = (m < 0) ? 0 : (m > 255) ? 255 : m;
         state->waterfall.mag[block_offset + bin] = (WF_ELEM_T)m;
     }
@@ -152,11 +188,11 @@ int ft8_portapack_decode(ft8_decoder_state_t* state) {
     state->decoding_active = true;
     state->num_messages = 0;
 
-    // Find candidates
+    // Find candidates (lowered threshold from 50→30 for better sensitivity)
     state->num_candidates = ftx_find_candidates(&state->waterfall,
                                                   FT8_MAX_CANDIDATES,
                                                   state->candidates,
-                                                  50);  // min_score threshold
+                                                  30);  // min_score threshold
 
     // Decode candidates
     for (int i = 0; i < state->num_candidates && state->num_messages < FT8_MAX_MESSAGES; i++) {

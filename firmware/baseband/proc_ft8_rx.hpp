@@ -52,7 +52,7 @@ class FT8RxProcessor : public BasebandProcessor {
     static constexpr size_t decim_2_output_fs = decim_1_output_fs / 2;  // 24 kHz
     static constexpr size_t audio_fs = 12000;  // 12 kHz audio for FT8
 
-    // FT8 timing constants (FT8_SLOT_DURATION defined in ft8_portapack.h)
+    // FT8 timing constants (FT8_SLOT_DURATION and FT8_SAMPLES_PER_SYMBOL defined in ft8_portapack.h)
     static constexpr size_t FT8_SAMPLES_PER_SLOT = static_cast<size_t>(audio_fs * FT8_SLOT_DURATION);  // ~151680 samples
 
     // Buffers
