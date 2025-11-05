@@ -84,7 +84,7 @@ class FT8RxProcessor : public BasebandProcessor {
     bool configured{false};
     int modulation_ssb{1};  // 1 = SSB mode for FT8
     uint32_t decim_2_decimation_factor{2};
-    uint32_t channel_filter_decimation_factor{1};
+    uint32_t channel_filter_decimation_factor{2};  // Changed 1→2 to get 12 kHz (24/2)
     int32_t channel_filter_low_f{0};
     int32_t channel_filter_high_f{0};
     int32_t channel_filter_transition{0};

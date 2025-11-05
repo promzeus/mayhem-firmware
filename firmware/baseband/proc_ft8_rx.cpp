@@ -26,10 +26,11 @@
 #include "event_m4.hpp"
 
 FT8RxProcessor::FT8RxProcessor() {
-    decim_0.configure(taps_11k0_decim_0.taps);
-    decim_1.configure(taps_11k0_decim_1.taps);
-    decim_2.configure(taps_11k0_channel.taps, decim_2_decimation_factor);
-    channel_filter.configure(taps_11k0_channel.taps, channel_filter_decimation_factor);
+    // Use same filters as Audio RX for SSB USB 2.8k (am_configs index 2)
+    decim_0.configure(taps_6k0_decim_0.taps);
+    decim_1.configure(taps_6k0_decim_1.taps);
+    decim_2.configure(taps_6k0_decim_2.taps, decim_2_decimation_factor);
+    channel_filter.configure(taps_2k8_usb_channel.taps, channel_filter_decimation_factor);
     audio_output.configure(false);
 
     if (!ft8_portapack_init(&decoder_state)) {
@@ -98,9 +99,10 @@ void FT8RxProcessor::send_test_packet() {
 void FT8RxProcessor::decode_ft8_slot() {
     int num_decoded = ft8_portapack_decode(&decoder_state);
 
-    // ALWAYS send debug info showing waterfall blocks and candidates
-    // SNR field = num_candidates (0-50), time_slot = waterfall blocks (should be 79)
-    FT8PacketMessage debug("WF", "BLKS", "", decoder_state.num_candidates, decoder_state.waterfall.num_blocks);
+    // ALWAYS send debug info showing candidates and max magnitude
+    // SNR field = num_candidates (0-50), time_slot = max_magnitude (0-255)
+    int max_mag = decoder_state.max_magnitude > 255 ? 255 : decoder_state.max_magnitude;
+    FT8PacketMessage debug("CND", "MAG", "", decoder_state.num_candidates, max_mag);
     shared_memory.application_queue.push(debug);
 
     if (num_decoded > 0) {
@@ -141,6 +143,7 @@ void FT8RxProcessor::capture_config(const CaptureConfigMessage& message) {
 }
 
 int main() {
+    audio::dma::init_audio_out();
     EventDispatcher event_dispatcher{std::make_unique<FT8RxProcessor>()};
     event_dispatcher.run();
     return 0;

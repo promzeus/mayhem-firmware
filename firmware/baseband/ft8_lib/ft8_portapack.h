@@ -72,6 +72,7 @@ typedef struct {
     uint32_t slot_count;
     uint32_t decode_count;
     uint32_t error_count;
+    int max_magnitude;  // For debugging waterfall magnitude
 
     // Timing
     uint32_t last_decode_time_ms;

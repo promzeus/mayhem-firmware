@@ -188,6 +188,13 @@ int ft8_portapack_decode(ft8_decoder_state_t* state) {
     state->decoding_active = true;
     state->num_messages = 0;
 
+    // Calculate max magnitude for debugging
+    int max_mag = 0;
+    for (int i = 0; i < state->waterfall.num_blocks * state->waterfall.block_stride; i++) {
+        if (state->waterfall.mag[i] > max_mag) max_mag = state->waterfall.mag[i];
+    }
+    state->max_magnitude = max_mag;
+
     // Find candidates (lowered threshold from 50→30 for better sensitivity)
     state->num_candidates = ftx_find_candidates(&state->waterfall,
                                                   FT8_MAX_CANDIDATES,
