@@ -102,7 +102,7 @@ class FT8RxProcessor : public BasebandProcessor {
 
     // FT8 processing
     void process_ft8_audio(const buffer_f32_t& audio);
-    void decode_ft8_slot();          // Decode complete FT8 slot
+    void decode_ft8_slot(float rms_level);  // Decode complete FT8 slot with audio RMS
     void send_ft8_messages();        // Send decoded messages to M0
     void send_test_packet();         // For fallback testing
 

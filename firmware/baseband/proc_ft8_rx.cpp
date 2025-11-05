@@ -74,8 +74,16 @@ void FT8RxProcessor::process_ft8_audio(const buffer_f32_t& audio) {
         return;
     }
 
+    // Calculate audio level for debugging
+    static float audio_sum_sq = 0.0f;
+    static size_t audio_sample_count = 0;
+
     for (size_t i = 0; i < audio.count; i++) {
-        audio_accumulator[audio_accumulator_pos++] = audio.p[i];
+        float sample = audio.p[i];
+        audio_sum_sq += sample * sample;
+        audio_sample_count++;
+
+        audio_accumulator[audio_accumulator_pos++] = sample;
         // Process FFT every 1920 samples (one FT8 symbol = 160ms)
         if (audio_accumulator_pos >= FT8_SAMPLES_PER_SYMBOL) {
             // Zero-padding to 2048 is handled inside ft8_portapack_process_audio()
@@ -84,7 +92,13 @@ void FT8RxProcessor::process_ft8_audio(const buffer_f32_t& audio) {
             audio_accumulator_pos = 0;
 
             if (slot_complete) {
-                decode_ft8_slot();
+                // Calculate mean square audio level (power) for the slot
+                // (using mean square instead of RMS to avoid sqrtf which needs libm)
+                float mean_sq = audio_sum_sq / audio_sample_count;
+                audio_sum_sq = 0.0f;
+                audio_sample_count = 0;
+
+                decode_ft8_slot(mean_sq);
                 slot_count++;
             }
         }
@@ -96,14 +110,21 @@ void FT8RxProcessor::send_test_packet() {
     shared_memory.application_queue.push(message);
 }
 
-void FT8RxProcessor::decode_ft8_slot() {
+void FT8RxProcessor::decode_ft8_slot(float rms_level) {
     int num_decoded = ft8_portapack_decode(&decoder_state);
 
-    // ALWAYS send debug info showing candidates and max magnitude
+    // ALWAYS send debug info: CND=candidates, MAG=max_magnitude
     // SNR field = num_candidates (0-50), time_slot = max_magnitude (0-255)
     int max_mag = decoder_state.max_magnitude > 255 ? 255 : decoder_state.max_magnitude;
     FT8PacketMessage debug("CND", "MAG", "", decoder_state.num_candidates, max_mag);
     shared_memory.application_queue.push(debug);
+
+    // Send audio power level as separate message (SNR field = power*1000, clamped to 127)
+    // Note: using mean square (not RMS) to avoid sqrtf dependency
+    int power_int = (int)(rms_level * 1000.0f);
+    if (power_int > 127) power_int = 127;  // Clamp to signed byte range
+    FT8PacketMessage power_debug("AUD", "PWR", "", power_int, slot_count % 2);
+    shared_memory.application_queue.push(power_debug);
 
     if (num_decoded > 0) {
         send_ft8_messages();
