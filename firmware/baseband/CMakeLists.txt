@@ -596,6 +596,8 @@ set(MODE_FLAGS "-Os")
 set(ORIG_LIBS ${LIBS})
 set(LIBS ${LIBS} m)
 DeclareTargets(PFT8 ft8_rx)
+# Increase stack size for FT8 (needs 13KB+ for FFT + LDPC decoder + AudioCompressor)
+target_link_libraries(baseband_ft8_rx.elf "-Wl,--defsym=__process_stack_size__=0x4000")  # 16KB stack (was 4KB)
 set(LIBS ${ORIG_LIBS})
 
 
