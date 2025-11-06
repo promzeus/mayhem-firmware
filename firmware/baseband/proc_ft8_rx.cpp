@@ -78,6 +78,7 @@ void FT8RxProcessor::execute(const buffer_c8_t& buffer) {
     const auto channel_out = channel_filter.execute(decim_1_out, dst_buffer);
     feed_channel_stats(channel_out);
     auto audio = demodulate(channel_out);
+    audio_compressor.execute_in_place(audio);  // AGC: normalize audio to ±1.0 range
     process_ft8_audio(audio);
     audio_output.write(audio);
 }
@@ -118,7 +119,9 @@ void FT8RxProcessor::process_ft8_audio(const buffer_f32_t& audio) {
         decimate_phase = !decimate_phase;
         if (!decimate_phase) continue;  // Skip odd samples (simple 2:1 decimation)
 
+        // AudioCompressor already normalized audio to ±1.0, no additional gain needed
         audio_accumulator[audio_accumulator_pos++] = sample;
+
         // Process FFT every 1920 samples (one FT8 symbol = 160ms @ 12kHz)
         if (audio_accumulator_pos >= FT8_SAMPLES_PER_SYMBOL) {
             // Zero-padding to 2048 is handled inside ft8_portapack_process_audio()
