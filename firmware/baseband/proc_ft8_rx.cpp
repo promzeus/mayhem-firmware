@@ -47,29 +47,7 @@ FT8RxProcessor::~FT8RxProcessor() {
 }
 
 void FT8RxProcessor::execute(const buffer_c8_t& buffer) {
-    static uint32_t exec_count = 0;
-    static uint32_t configured_count = 0;
-    static uint32_t last_report = 0;
-
-    exec_count++;
-
-    if (!configured) {
-        // Report every 10000 execute calls to see if we're blocked on !configured
-        if (exec_count - last_report >= 10000) {
-            last_report = exec_count;
-            FT8PacketMessage debug("EXE", "WAIT", "", (exec_count / 1000) & 0x7F, 0);
-            shared_memory.application_queue.push(debug);
-        }
-        return;
-    }
-
-    configured_count++;
-
-    // Report every 10000 configured execute calls to monitor frequency
-    if (configured_count % 10000 == 0) {
-        FT8PacketMessage debug("EXE", "RUN", "", (configured_count / 1000) & 0x7F, (exec_count / 1000) & 0xFF);
-        shared_memory.application_queue.push(debug);
-    }
+    if (!configured) return;
 
     const auto decim_0_out = decim_0.execute(buffer, dst_buffer);
     const auto decim_1_out = decim_1.execute(decim_0_out, dst_buffer);

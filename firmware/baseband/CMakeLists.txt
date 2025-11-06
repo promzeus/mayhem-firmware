@@ -590,6 +590,8 @@ set(MODE_CPPSRC
 	ft8_lib/message.c
 	ft8_lib/text.c
 )
+# Optimize for size to fit in 32KB external app limit
+set(MODE_FLAGS "-Os")
 # Add math library for ft8_lib (log10f, cosf, sinf, sqrtf)
 set(ORIG_LIBS ${LIBS})
 set(LIBS ${LIBS} m)
