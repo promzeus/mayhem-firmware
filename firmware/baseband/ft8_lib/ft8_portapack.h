@@ -86,6 +86,28 @@ typedef struct {
     int debug_stage;  // 0=start, 1=found_cands, 2=loop_start, 3+=cand_N
     int debug_value;  // Additional debug info
 
+    // Audio input debug (track signal flow)
+    float debug_audio_peak;   // Peak audio sample seen
+    float debug_fft_power;    // Peak FFT power value
+    int debug_blocks_written; // Number of waterfall blocks written
+
+    // DC offset debug (track DC vs AC signal distribution)
+    float debug_dc_power;     // Power in bin 0 (DC offset)
+    float debug_ac_power;     // Peak power in bins 1+ (AC signal)
+    int debug_nonzero_bins;   // Count of non-zero waterfall elements
+
+    // Waterfall sample debug (concrete values to diagnose MAG=0)
+    int debug_mag_sample_0;   // Value at waterfall.mag[0]
+    int debug_mag_sample_1;   // Value at waterfall.mag[1]
+    int debug_mag_sample_100; // Value at waterfall.mag[100]
+    int debug_mag_first_nonzero;      // First nonzero value found
+    int debug_mag_first_nonzero_idx;  // Index of first nonzero value
+
+    // Critical debug: waterfall dimensions to diagnose total_elements issue
+    int debug_num_blocks;     // state->waterfall.num_blocks
+    int debug_block_stride;   // state->waterfall.block_stride
+    int debug_total_elements; // Computed total_elements value
+
 } ft8_decoder_state_t;
 
 #ifdef __cplusplus

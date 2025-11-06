@@ -138,11 +138,19 @@ bool ft8_portapack_process_audio(ft8_decoder_state_t* state,
     // Copy audio to FFT input buffer with Hamming window using fast LUT
     size_t copy_size = (buffer_size < FT8_FFT_SIZE) ? buffer_size : FT8_FFT_SIZE;
     const float pi = 3.14159265f;
+
+    // DEBUG: Track peak audio sample
+    float audio_peak = 0.0f;
     for (size_t i = 0; i < copy_size; i++) {
+        float abs_val = (audio_buffer[i] < 0.0f) ? -audio_buffer[i] : audio_buffer[i];
+        if (abs_val > audio_peak) audio_peak = abs_val;
+
         // Hamming window: 0.54 - 0.46 * cos(2*pi*i/N)
         float window = 0.54f - 0.46f * fast_cos(2.0f * pi * i / FT8_FFT_SIZE);
         fft_input[i] = audio_buffer[i] * window;
     }
+    state->debug_audio_peak = audio_peak;  // Store for debugging
+
     // Zero-pad if needed
     for (size_t i = copy_size; i < FT8_FFT_SIZE; i++) {
         fft_input[i] = 0.0f;
@@ -165,16 +173,40 @@ bool ft8_portapack_process_audio(ft8_decoder_state_t* state,
     // Using power instead of magnitude to avoid slow sqrtf() and log10f()
     int block_offset = state->waterfall.num_blocks * state->waterfall.block_stride;
 
+    // DEBUG: Track peak FFT power and separate DC from AC
+    float fft_power_peak = 0.0f;
+    float dc_power = 0.0f;
+    float ac_power_peak = 0.0f;
+
+    // FFT normalization: divide by N (not N²) for power spectrum
+    const float fft_norm = 1.0f / FT8_FFT_SIZE;  // 1 / 2048 = ~4.88e-4
+
     for (int bin = 0; bin < FT8_NUM_BINS && bin < FT8_FFT_SIZE / 2; bin++) {
         float r = fft_output[bin * 2], im = fft_output[bin * 2 + 1];
-        float power = r * r + im * im;
-        // Scale to 0-255 range (increased for AudioCompressor normalized signals)
-        int m = (int)(power * 1000.0f);  // was 0.01f - too small for AGC output
+        float power = (r * r + im * im) * fft_norm;  // Normalize power
+
+        // Track overall peak
+        if (power > fft_power_peak) fft_power_peak = power;
+
+        // Separate DC (bin 0) from AC (bins 1+)
+        if (bin == 0) {
+            dc_power = power;
+        } else {
+            if (power > ac_power_peak) ac_power_peak = power;
+        }
+
+        // Scale normalized power to 0-255 range
+        // After /N normalization + AGC, need aggressive scaling for weak signals
+        int m = (int)(power * 125.0f);  // Increased 1000x: AGC makes signals much weaker
         m = (m < 0) ? 0 : (m > 255) ? 255 : m;
         state->waterfall.mag[block_offset + bin] = (WF_ELEM_T)m;
     }
+    state->debug_fft_power = fft_power_peak;  // Store for debugging
+    state->debug_dc_power = dc_power;
+    state->debug_ac_power = ac_power_peak;
 
     state->waterfall.num_blocks++;
+    state->debug_blocks_written = state->waterfall.num_blocks;
 
     // Return true if slot is complete
     return (state->waterfall.num_blocks >= FT8_WATERFALL_BLOCKS);
@@ -192,12 +224,44 @@ int ft8_portapack_decode(ft8_decoder_state_t* state) {
     state->decoding_active = true;
     state->num_messages = 0;
 
-    // Calculate max magnitude for debugging
+    // Calculate max magnitude for debugging, SKIP bin 0 (DC offset) in each block
     int max_mag = 0;
-    for (int i = 0; i < state->waterfall.num_blocks * state->waterfall.block_stride; i++) {
-        if (state->waterfall.mag[i] > max_mag) max_mag = state->waterfall.mag[i];
+    int nonzero_count = 0;
+    int total_elements = state->waterfall.num_blocks * state->waterfall.block_stride;
+
+    // DEBUG: Save waterfall dimensions to diagnose total_elements issue
+    state->debug_num_blocks = state->waterfall.num_blocks;
+    state->debug_block_stride = state->waterfall.block_stride;
+    state->debug_total_elements = total_elements;
+
+    for (int block = 0; block < state->waterfall.num_blocks; block++) {
+        int block_start = block * state->waterfall.block_stride;
+        // Skip bin 0 (DC), start from bin 1
+        for (int bin = 1; bin < state->waterfall.block_stride; bin++) {
+            int idx = block_start + bin;
+            WF_ELEM_T mag = state->waterfall.mag[idx];
+            if (mag > 0) nonzero_count++;
+            if (mag > max_mag) max_mag = mag;
+        }
     }
     state->max_magnitude = max_mag;
+    state->debug_nonzero_bins = nonzero_count;
+
+    // DEBUG: Collect concrete waterfall samples to diagnose MAG=0
+    state->debug_mag_sample_0 = (total_elements > 0) ? state->waterfall.mag[0] : -1;
+    state->debug_mag_sample_1 = (total_elements > 1) ? state->waterfall.mag[1] : -1;
+    state->debug_mag_sample_100 = (total_elements > 100) ? state->waterfall.mag[100] : -1;
+
+    // Find first nonzero element
+    state->debug_mag_first_nonzero = -1;
+    state->debug_mag_first_nonzero_idx = -1;
+    for (int i = 0; i < total_elements; i++) {
+        if (state->waterfall.mag[i] > 0) {
+            state->debug_mag_first_nonzero = state->waterfall.mag[i];
+            state->debug_mag_first_nonzero_idx = i;
+            break;
+        }
+    }
 
     // DEBUG: Stage 1 - Before find_candidates
     state->debug_stage = 1;

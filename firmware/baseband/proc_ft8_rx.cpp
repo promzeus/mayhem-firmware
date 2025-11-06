@@ -156,6 +156,70 @@ void FT8RxProcessor::decode_ft8_slot(float rms_level, size_t samples_in_slot, si
     FT8PacketMessage power_debug("AUD", "PWR", "", power_int, slot_count % 2);
     shared_memory.application_queue.push(power_debug);
 
+    // DEBUG: Send audio peak level (SNR = audio_peak * 100, clamped)
+    int audio_peak_int = (int)(decoder_state.debug_audio_peak * 100.0f);
+    if (audio_peak_int > 127) audio_peak_int = 127;
+    FT8PacketMessage audio_peak_debug("AUD", "PEAK", "", audio_peak_int, decoder_state.debug_blocks_written);
+    shared_memory.application_queue.push(audio_peak_debug);
+
+    // DEBUG: Send FFT power peak (SNR = fft_power * 10, clamped)
+    int fft_power_int = (int)(decoder_state.debug_fft_power * 10.0f);
+    if (fft_power_int > 127) fft_power_int = 127;
+    FT8PacketMessage fft_power_debug("FFT", "PWR", "", fft_power_int, decoder_state.debug_blocks_written);
+    shared_memory.application_queue.push(fft_power_debug);
+
+    // DEBUG: Send DC power vs AC power (SNR = DC*10, time_slot = AC*10)
+    int dc_power_int = (int)(decoder_state.debug_dc_power * 10.0f);
+    if (dc_power_int > 127) dc_power_int = 127;
+    int ac_power_int = (int)(decoder_state.debug_ac_power * 10.0f);
+    if (ac_power_int > 127) ac_power_int = 127;
+    FT8PacketMessage dc_ac_debug("DC", "AC", "", dc_power_int, ac_power_int);
+    shared_memory.application_queue.push(dc_ac_debug);
+
+    // DEBUG: Send nonzero bin count (SNR = count/10, time_slot = blocks)
+    int nonzero_int = decoder_state.debug_nonzero_bins / 10;
+    if (nonzero_int > 127) nonzero_int = 127;
+    FT8PacketMessage nonzero_debug("NZ", "BINS", "", nonzero_int, decoder_state.debug_blocks_written);
+    shared_memory.application_queue.push(nonzero_debug);
+
+    // DEBUG: Send waterfall dimensions to diagnose total_elements issue
+    int num_blocks = decoder_state.debug_num_blocks > 127 ? 127 : decoder_state.debug_num_blocks;
+    int block_stride = decoder_state.debug_block_stride > 255 ? 255 : decoder_state.debug_block_stride;
+    FT8PacketMessage dims_debug("BLK", "DIM", "", num_blocks, block_stride);
+    shared_memory.application_queue.push(dims_debug);
+
+    // DEBUG: Send total_elements (SNR = total_elements/100, clamped)
+    int total_elem_int = decoder_state.debug_total_elements / 100;
+    if (total_elem_int > 127) total_elem_int = 127;
+    if (total_elem_int < -127) total_elem_int = -127;
+    FT8PacketMessage total_elem_debug("TOT", "ELEM", "", total_elem_int, 0);
+    shared_memory.application_queue.push(total_elem_debug);
+
+    // DEBUG: Send waterfall samples to diagnose MAG=0 issue (divide by 2 to fit in int8_t range 0-127)
+    int wf0_val = decoder_state.debug_mag_sample_0 / 2;
+    if (wf0_val < 0) wf0_val = -1;
+    FT8PacketMessage wf0_debug("WF", "[0]", "", wf0_val, 0);
+    shared_memory.application_queue.push(wf0_debug);
+
+    int wf1_val = decoder_state.debug_mag_sample_1 / 2;
+    if (wf1_val < 0) wf1_val = -1;
+    FT8PacketMessage wf1_debug("WF", "[1]", "", wf1_val, 0);
+    shared_memory.application_queue.push(wf1_debug);
+
+    int wf100_val = decoder_state.debug_mag_sample_100 / 2;
+    if (wf100_val < 0) wf100_val = -1;
+    FT8PacketMessage wf100_debug("WF", "[100]", "", wf100_val, 0);
+    shared_memory.application_queue.push(wf100_debug);
+
+    // DEBUG: Send first nonzero element (SNR = value/2, time_slot = index/10)
+    int first_nz_val = decoder_state.debug_mag_first_nonzero / 2;
+    if (first_nz_val < 0) first_nz_val = -1;
+    int first_nz_idx = decoder_state.debug_mag_first_nonzero_idx / 10;
+    if (first_nz_idx > 127) first_nz_idx = 127;
+    if (first_nz_idx < 0) first_nz_idx = 0;
+    FT8PacketMessage first_nz_debug("1ST", "NZ", "", first_nz_val, first_nz_idx);
+    shared_memory.application_queue.push(first_nz_debug);
+
     // Send audio buffer debug info: chunk_size and num_chunks
     // SNR = chunk_size (how many samples per buffer), time_slot = num_chunks (how many buffers per slot)
     int chunk_dbg = chunk_size > 127 ? 127 : (int)chunk_size;
