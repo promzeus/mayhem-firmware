@@ -185,6 +185,10 @@ int ft8_portapack_decode(ft8_decoder_state_t* state) {
     if (!state || !state->initialized) return 0;
     if (state->waterfall.num_blocks < FT8_WATERFALL_BLOCKS) return 0;
 
+    // DEBUG: Stage 0 - Start of decode
+    state->debug_stage = 0;
+    state->debug_value = state->waterfall.num_blocks;
+
     state->decoding_active = true;
     state->num_messages = 0;
 
@@ -195,14 +199,26 @@ int ft8_portapack_decode(ft8_decoder_state_t* state) {
     }
     state->max_magnitude = max_mag;
 
+    // DEBUG: Stage 1 - Before find_candidates
+    state->debug_stage = 1;
+    state->debug_value = max_mag;
+
     // Find candidates (lowered threshold from 50→30 for better sensitivity)
     state->num_candidates = ftx_find_candidates(&state->waterfall,
                                                   FT8_MAX_CANDIDATES,
                                                   state->candidates,
                                                   30);  // min_score threshold
 
+    // DEBUG: Stage 2 - After find_candidates, before loop
+    state->debug_stage = 2;
+    state->debug_value = state->num_candidates;
+
     // Decode candidates
     for (int i = 0; i < state->num_candidates && state->num_messages < FT8_MAX_MESSAGES; i++) {
+        // DEBUG: Stage 3+ - Decoding candidate N
+        state->debug_stage = 3 + i;
+        state->debug_value = (int)state->candidates[i].score;
+
         ftx_message_t msg;
         ftx_decode_status_t st;
         if (ftx_decode_candidate(&state->waterfall, &state->candidates[i],
@@ -211,6 +227,10 @@ int ft8_portapack_decode(ft8_decoder_state_t* state) {
             state->decode_count++;
         }
     }
+
+    // DEBUG: Stage 100 - Completed successfully
+    state->debug_stage = 100;
+    state->debug_value = state->num_messages;
 
     state->decoding_active = false;
     state->slot_count++;

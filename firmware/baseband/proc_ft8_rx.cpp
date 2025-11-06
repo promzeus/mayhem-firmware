@@ -129,7 +129,20 @@ void FT8RxProcessor::send_test_packet() {
 }
 
 void FT8RxProcessor::decode_ft8_slot(float rms_level, size_t samples_in_slot, size_t chunk_size, size_t num_chunks) {
+    // DEBUG: Signal start of decode
+    FT8PacketMessage dbg_start("DEC", "START", "", slot_count % 128, 0);
+    shared_memory.application_queue.push(dbg_start);
+
     int num_decoded = ft8_portapack_decode(&decoder_state);
+
+    // DEBUG: Signal end of decode
+    FT8PacketMessage dbg_end("DEC", "END", "", num_decoded, decoder_state.num_candidates);
+    shared_memory.application_queue.push(dbg_end);
+
+    // DEBUG: Send last stage reached (SNR=stage, time_slot=value)
+    FT8PacketMessage dbg_stage("STG", "VAL", "", decoder_state.debug_stage,
+                               decoder_state.debug_value > 255 ? 255 : decoder_state.debug_value);
+    shared_memory.application_queue.push(dbg_stage);
 
     // ALWAYS send debug info: CND=candidates, MAG=max_magnitude
     // SNR field = num_candidates (0-50), time_slot = max_magnitude (0-255)

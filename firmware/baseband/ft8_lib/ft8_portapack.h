@@ -82,6 +82,10 @@ typedef struct {
     bool initialized;
     bool decoding_active;
 
+    // Debug tracking (for crash analysis)
+    int debug_stage;  // 0=start, 1=found_cands, 2=loop_start, 3+=cand_N
+    int debug_value;  // Additional debug info
+
 } ft8_decoder_state_t;
 
 #ifdef __cplusplus
