@@ -168,8 +168,8 @@ bool ft8_portapack_process_audio(ft8_decoder_state_t* state,
     for (int bin = 0; bin < FT8_NUM_BINS && bin < FT8_FFT_SIZE / 2; bin++) {
         float r = fft_output[bin * 2], im = fft_output[bin * 2 + 1];
         float power = r * r + im * im;
-        // Scale to 0-255 range (empirical scaling)
-        int m = (int)(power * 0.01f);
+        // Scale to 0-255 range (increased for AudioCompressor normalized signals)
+        int m = (int)(power * 1000.0f);  // was 0.01f - too small for AGC output
         m = (m < 0) ? 0 : (m > 255) ? 255 : m;
         state->waterfall.mag[block_offset + bin] = (WF_ELEM_T)m;
     }
