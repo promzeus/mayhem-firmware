@@ -56,7 +56,6 @@ void FT8RxProcessor::execute(const buffer_c8_t& buffer) {
     const auto channel_out = channel_filter.execute(decim_1_out, dst_buffer);
     feed_channel_stats(channel_out);
     auto audio = demodulate(channel_out);
-    audio_compressor.execute_in_place(audio);  // AGC: normalize audio to ±1.0 range
     process_ft8_audio(audio);
     audio_output.write(audio);
 }

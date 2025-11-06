@@ -28,7 +28,6 @@
 
 #include "dsp_decimate.hpp"
 #include "dsp_demodulate.hpp"
-#include "audio_compressor.hpp"
 
 #include "audio_output.hpp"
 #include "spectrum_collector.hpp"
@@ -76,7 +75,6 @@ class FT8RxProcessor : public BasebandProcessor {
     dsp::demodulate::SSB demod_ssb{};
 
     // Audio processing
-    FeedForwardCompressor audio_compressor{};
     AudioOutput audio_output{};
     SpectrumCollector channel_spectrum{};
 
