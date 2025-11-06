@@ -29,7 +29,7 @@ static float fft_output[FT8_FFT_SIZE * 2];
 static float cos_lut[256];
 
 // Fast cosine using lookup table with linear interpolation
-static inline float fast_cos(float x) {
+static float fast_cos(float x) {
     // Normalize x to [0, 1] range (0 to 2*pi -> 0 to 1)
     float norm = x / (2.0f * 3.14159265f);
     norm = norm - (int)norm;  // Keep fractional part
