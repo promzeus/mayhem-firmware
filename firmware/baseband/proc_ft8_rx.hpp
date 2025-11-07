@@ -92,7 +92,6 @@ class FT8RxProcessor : public BasebandProcessor {
     std::array<float, FT8_FFT_SIZE> audio_accumulator{};  // 1920 samples @ 12kHz (decimated from 24kHz input)
     size_t audio_accumulator_pos{0};
     uint32_t slot_count{0};
-    bool decoding_enabled{true};  // Enable/disable FT8 decoding
 
     // Message handlers
     void capture_config(const CaptureConfigMessage& message);
@@ -100,9 +99,8 @@ class FT8RxProcessor : public BasebandProcessor {
 
     // FT8 processing
     void process_ft8_audio(const buffer_f32_t& audio);
-    void decode_ft8_slot(float rms_level, size_t samples_in_slot, size_t chunk_size, size_t num_chunks);
+    void decode_ft8_slot();
     void send_ft8_messages();        // Send decoded messages to M0
-    void send_test_packet();         // For fallback testing
 
     /* NB: Threads should be the last members in the class definition. */
     BasebandThread baseband_thread{baseband_fs, this, baseband::Direction::Receive};

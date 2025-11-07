@@ -196,8 +196,9 @@ bool ft8_portapack_process_audio(ft8_decoder_state_t* state,
         }
 
         // Scale normalized power to 0-255 range
-        // Without AGC, demodulator output is ~0.01-1.0, need strong scaling
-        int m = (int)(power * 1000.0f);  // 8x increase for raw signal without AGC
+        // Input has software gain ×20, FFT normalized by /N=2048
+        // Debug shows MAX=127 but AVG=0, NZ=0 - need much stronger scaling
+        int m = (int)(power * 10000.0f);  // Strong scaling to capture weak bins
         m = (m < 0) ? 0 : (m > 255) ? 255 : m;  // Saturation clipping prevents overflow
         state->waterfall.mag[block_offset + bin] = (WF_ELEM_T)m;
     }
