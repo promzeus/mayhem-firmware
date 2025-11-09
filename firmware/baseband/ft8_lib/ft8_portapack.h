@@ -38,7 +38,7 @@
 #define FT8_FREQ_MAX           1450.0f   // Maximum frequency (Hz) - reduced range
 
 // Memory optimization
-#define FT8_MAX_CANDIDATES     50        // Maximum decode candidates
+#define FT8_MAX_CANDIDATES     15        // Maximum decode candidates (reduced to prevent overflow)
 #define FT8_MAX_MESSAGES       10        // Maximum messages per slot
 #define FT8_LDPC_ITERATIONS    10        // LDPC iterations (reduced for stability)
 
@@ -51,7 +51,7 @@
 
 // Calculate waterfall size
 // blocks * time_osr * freq_osr * num_bins
-// 79 * 1 * 1 * 400 = 31,600 bytes (using uint8_t per magnitude)
+// 79 * 1 * 1 * 200 = 15,800 bytes (using uint8_t per magnitude)
 #define FT8_WATERFALL_SIZE (FT8_WATERFALL_BLOCKS * FT8_WATERFALL_TIME_OSR * \
                             FT8_WATERFALL_FREQ_OSR * FT8_NUM_BINS)
 
@@ -73,10 +73,14 @@ typedef struct {
     uint32_t slot_count;
     uint32_t decode_count;
     uint32_t error_count;
+    uint32_t skip_count;     // Slots skipped due to too many candidates (noise)
     int max_magnitude;  // For debugging waterfall magnitude
 
     // Timing
     uint32_t last_decode_time_ms;
+
+    // Configuration parameters
+    int min_score_threshold;  // Minimum score for candidate detection (higher = fewer false positives)
 
     // Status flags
     bool initialized;
@@ -132,6 +136,11 @@ int ft8_portapack_decode(ft8_decoder_state_t* state);
 
 // Reset decoder for new slot
 void ft8_portapack_reset_slot(ft8_decoder_state_t* state);
+
+// Set minimum score threshold for candidate detection
+// Higher values = fewer false positives on noise, but may miss weak signals
+// Recommended range: 30-150 (default: 70)
+void ft8_portapack_set_min_score(ft8_decoder_state_t* state, int threshold);
 
 #ifdef __cplusplus
 }

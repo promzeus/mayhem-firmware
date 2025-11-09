@@ -27,6 +27,7 @@
 #include "ui.hpp"
 #include "ui_receiver.hpp"
 #include "ui_rssi.hpp"
+#include "ui_audio.hpp"
 #include "ui_freq_field.hpp"
 #include "ui_widget.hpp"
 #include "receiver_model.hpp"
@@ -58,22 +59,42 @@ class FT8RxView : public View {
 
     void on_statistics_update(const ChannelStatistics& statistics);
     void on_ft8_packet(const FT8PacketMessage* message);
+    void on_threshold_change(int32_t value);
 
-    // All controls on line 0 (like AFSK RX)
+    // All controls on line 0 (like AFSK RX and POCSAG)
     RFAmpField field_rf_amp{
-        {13 * 8, 0}};
+        {11 * 8, 0}};
 
     LNAGainField field_lna{
-        {15 * 8, 0}};
+        {13 * 8, 0}};
 
     VGAGainField field_vga{
-        {18 * 8, 0}};
+        {16 * 8, 0}};
 
+    // DUAL RSSI+Audio indicators like POCSAG (two bars stacked vertically)
+    // Upper bar: RSSI signal strength
+    // X: 19*8-4=148px, Width: 52px (ends at 200px)
     RSSI rssi{
-        {21 * 8, 0, 6 * 8, 8}};
+        {19 * 8 - 4, 3, 52, 4}};  // Like POCSAG: Y=3, height=4
 
+    // Lower bar: Audio level (shows threshold line via set_db)
+    Audio audio{
+        {19 * 8 - 4, 8, 52, 4}};  // Like POCSAG: Y=8, height=4
+
+    // Threshold adjustment field (min_score for FT8 decoder)
+    // Position from right edge: 5 chars (40px) from right = 200px
+    // Ends at 216px (200 + 16), then 8px space, then volume at 224px
+    NumberField field_threshold{
+        {UI_POS_X_RIGHT(5), 0},
+        2,        // 2 digits
+        {10, 99}, // Range 10-99
+        1,        // Step
+        ' '       // Filler
+    };
+
+    // Volume field: 2 chars (16px) from right = 224px
     AudioVolumeField field_volume{
-        {28 * 8, 0}};
+        {UI_POS_X_RIGHT(2), 0}};
 
     RxFrequencyField field_frequency{
         {0, 0},

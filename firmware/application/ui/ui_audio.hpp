@@ -38,14 +38,17 @@ class Audio : public Widget {
         const Rect parent_rect)
         : Widget{parent_rect},
           rms_db_{-120},
-          max_db_{-120} {
+          max_db_{-120},
+          threshold_db_{0} {
     }
 
     void paint(Painter& painter) override;
+    void set_db(int16_t db);  // Set threshold line like in RSSI widget
 
    private:
     int32_t rms_db_;
     int32_t max_db_;
+    int16_t threshold_db_;  // Threshold line for squelch/decoder sensitivity
 
     MessageHandlerRegistration message_handler_statistics{
         Message::ID::AudioStatistics,

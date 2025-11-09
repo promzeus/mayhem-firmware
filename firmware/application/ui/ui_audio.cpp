@@ -57,12 +57,28 @@ void Audio::paint(Painter& painter) {
     painter.fill_rectangle(
         r3,
         Color::black());
+
+    // Draw threshold line (like in RSSI widget)
+    if (threshold_db_) {
+        constexpr int db_threshold_min = -80;
+        constexpr int db_threshold_max = 10;
+        constexpr int db_threshold_delta = db_threshold_max - db_threshold_min;
+        const range_t<int> x_threshold_range{0, r.width() - 1};
+        const int16_t x_threshold = x_threshold_range.clip((threshold_db_ - db_threshold_min) * r.width() / db_threshold_delta);
+
+        const Rect r_threshold{r.left() + x_threshold, r.top(), 1, r.height()};
+        painter.fill_rectangle(r_threshold, Color::yellow());  // Yellow line for threshold
+    }
 }
 
 void Audio::on_statistics_update(const AudioStatistics& statistics) {
     rms_db_ = statistics.rms_db;
     max_db_ = statistics.max_db;
     set_dirty();
+}
+
+void Audio::set_db(int16_t db) {
+    threshold_db_ = db;
 }
 
 } /* namespace ui */

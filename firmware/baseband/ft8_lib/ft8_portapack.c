@@ -98,6 +98,10 @@ bool ft8_portapack_init(ft8_decoder_state_t* state) {
     state->initialized = true;
     state->decoding_active = false;
 
+    // Default configuration (like WSJT-X: sensitive but with overflow protection)
+    state->min_score_threshold = 30;  // Low threshold for weak signals
+    state->skip_count = 0;  // Initialize skip counter
+
     // Initialize cosine lookup table for fast windowing
     const float pi = 3.14159265f;
     for (int i = 0; i < 256; i++) {
@@ -173,35 +177,65 @@ bool ft8_portapack_process_audio(ft8_decoder_state_t* state,
     // Using power instead of magnitude to avoid slow sqrtf() and log10f()
     int block_offset = state->waterfall.num_blocks * state->waterfall.block_stride;
 
-    // DEBUG: Track peak FFT power and separate DC from AC
+    // FFT normalization: divide by N (not N²) for power spectrum
+    const float fft_norm = 1.0f / FT8_FFT_SIZE;  // 1 / 2048 = ~4.88e-4
+
+    // Adaptive normalization for FT8 decoder (optimized: no power recalculation)
+    // This maximizes contrast for signal detection (decoder uses bin differences)
+
+    // Pass 1: Calculate power spectrum and find max AC power (skip DC bin 0)
+    float powers[FT8_NUM_BINS];  // 200 floats = 800 bytes stack
     float fft_power_peak = 0.0f;
     float dc_power = 0.0f;
     float ac_power_peak = 0.0f;
 
-    // FFT normalization: divide by N (not N²) for power spectrum
-    const float fft_norm = 1.0f / FT8_FFT_SIZE;  // 1 / 2048 = ~4.88e-4
-
     for (int bin = 0; bin < FT8_NUM_BINS && bin < FT8_FFT_SIZE / 2; bin++) {
         float r = fft_output[bin * 2], im = fft_output[bin * 2 + 1];
-        float power = (r * r + im * im) * fft_norm;  // Normalize power
+        float power = (r * r + im * im) * fft_norm;
+        powers[bin] = power;
 
-        // Track overall peak
         if (power > fft_power_peak) fft_power_peak = power;
 
-        // Separate DC (bin 0) from AC (bins 1+)
         if (bin == 0) {
             dc_power = power;
         } else {
             if (power > ac_power_peak) ac_power_peak = power;
         }
+    }
 
-        // Scale normalized power to 0-255 range
-        // Input has software gain ×20, FFT normalized by /N=2048
-        // Debug shows MAX=127 but AVG=0, NZ=0 - need much stronger scaling
-        int m = (int)(power * 10000.0f);  // Strong scaling to capture weak bins
-        m = (m < 0) ? 0 : (m > 255) ? 255 : m;  // Saturation clipping prevents overflow
+    // Pass 2: Convert to logarithmic scale with adaptive dynamic range
+    // Use peak as ceiling (maps to 127), noise floor 60dB below peak
+    float peak_power_db = 10.0f * log10f(fft_power_peak + 1e-10f);
+
+    // Use peak as ceiling (guarantee max waterfall = 127 at peak)
+    // Minimum ceiling at -20dB to avoid noise amplification on weak signals
+    float signal_ceiling_db = (peak_power_db > -20.0f) ? peak_power_db : -20.0f;
+
+    // Noise floor is 60dB below ceiling (adaptive dynamic range)
+    const float noise_floor_db = signal_ceiling_db - 60.0f;
+    const float range_db = 60.0f;  // Always 60dB range
+
+    for (int bin = 0; bin < FT8_NUM_BINS && bin < FT8_FFT_SIZE / 2; bin++) {
+        int m;
+
+        // Convert power to dB scale
+        float power_db = 10.0f * log10f(powers[bin] + 1e-10f);
+
+        // Normalize to 0-1 range using adaptive ceiling
+        float normalized = (power_db - noise_floor_db) / range_db;
+
+        // Clamp to valid range
+        if (normalized < 0.0f) normalized = 0.0f;
+        if (normalized > 1.0f) normalized = 1.0f;
+
+        // Scale to 0-127 for display
+        m = (int)(normalized * 127.0f);
+
+        // Final safety clamp
+        m = (m < 0) ? 0 : (m > 127) ? 127 : m;
         state->waterfall.mag[block_offset + bin] = (WF_ELEM_T)m;
     }
+
     state->debug_fft_power = fft_power_peak;  // Store for debugging
     state->debug_dc_power = dc_power;
     state->debug_ac_power = ac_power_peak;
@@ -268,11 +302,21 @@ int ft8_portapack_decode(ft8_decoder_state_t* state) {
     state->debug_stage = 1;
     state->debug_value = max_mag;
 
-    // Find candidates (lowered threshold from 50→30 for better sensitivity)
+    // Find candidates using configurable threshold
     state->num_candidates = ftx_find_candidates(&state->waterfall,
                                                   FT8_MAX_CANDIDATES,
                                                   state->candidates,
-                                                  30);  // min_score threshold
+                                                  state->min_score_threshold);  // Adjustable: higher = fewer false positives
+
+    // Overflow protection: Max candidates reached = likely noise
+    // ftx_find_candidates returns up to FT8_MAX_CANDIDATES (15)
+    // If we got exactly 15, there were probably more that got cut off
+    // But we still decode the top candidates we found (don't discard them)
+    if (state->num_candidates >= FT8_MAX_CANDIDATES) {
+        state->skip_count++;  // Just count the overflow for statistics
+        // Continue with decoding the 15 best candidates
+        // Don't zero out num_candidates or return early
+    }
 
     // DEBUG: Stage 2 - After find_candidates, before loop
     state->debug_stage = 2;
@@ -307,4 +351,12 @@ void ft8_portapack_reset_slot(ft8_decoder_state_t* state) {
     if (!state) return;
     state->waterfall.num_blocks = state->num_candidates = state->num_messages = 0;
     memset(state->waterfall.mag, 0, FT8_WATERFALL_SIZE);
+}
+
+void ft8_portapack_set_min_score(ft8_decoder_state_t* state, int threshold) {
+    if (!state) return;
+    // Clamp to reasonable range (30-150)
+    if (threshold < 30) threshold = 30;
+    if (threshold > 150) threshold = 150;
+    state->min_score_threshold = threshold;
 }

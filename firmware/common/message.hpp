@@ -137,6 +137,7 @@ class Message {
         FSKPacket = 80,
         EPIRBPacket = 81,
         FT8Packet = 82,
+        FT8Configure = 83,
         MAX
     };
 
@@ -386,6 +387,17 @@ class FT8PacketMessage : public Message {
     char grid[7];        // Grid locator
     int8_t snr;          // Signal-to-noise ratio
     uint8_t time_slot;   // Time slot (0-based, 0 = first half, 1 = second half)
+};
+
+class FT8ConfigureMessage : public Message {
+   public:
+    constexpr FT8ConfigureMessage(
+        uint8_t threshold_value)
+        : Message{ID::FT8Configure},
+          threshold{threshold_value} {
+    }
+
+    uint8_t threshold;  // Min score threshold for FT8 decoder (10-99)
 };
 
 class TPMSPacketMessage : public Message {

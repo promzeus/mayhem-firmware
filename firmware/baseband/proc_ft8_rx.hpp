@@ -28,8 +28,6 @@
 
 #include "dsp_decimate.hpp"
 #include "dsp_demodulate.hpp"
-#include "audio_compressor.hpp"
-
 #include "audio_output.hpp"
 #include "spectrum_collector.hpp"
 
@@ -52,9 +50,6 @@ class FT8RxProcessor : public BasebandProcessor {
     static constexpr size_t decim_1_output_fs = decim_0_output_fs / 8;  // 48 kHz
     static constexpr size_t audio_fs = 24000;  // 24 kHz audio (48k / 2 via channel_filter)
 
-    // FT8 timing constants (FT8_SLOT_DURATION and FT8_SAMPLES_PER_SYMBOL defined in ft8_portapack.h)
-    static constexpr size_t FT8_SAMPLES_PER_SLOT = static_cast<size_t>(audio_fs * FT8_SLOT_DURATION);  // ~303360 samples
-
     // Buffers
     std::array<complex16_t, 512> dst{};
     const buffer_c16_t dst_buffer{
@@ -75,8 +70,7 @@ class FT8RxProcessor : public BasebandProcessor {
     dsp::demodulate::AM demod_am{};
     dsp::demodulate::SSB demod_ssb{};
 
-    // Audio processing
-    FeedForwardCompressor audio_compressor{};
+    // Audio processing (no AGC to save flash space)
     AudioOutput audio_output{};
     SpectrumCollector channel_spectrum{};
 
@@ -89,18 +83,18 @@ class FT8RxProcessor : public BasebandProcessor {
 
     // FT8 decoder state and buffers
     ft8_decoder_state_t decoder_state{};
-    std::array<float, FT8_FFT_SIZE> audio_accumulator{};  // 1920 samples @ 12kHz (decimated from 24kHz input)
+    std::array<float, FT8_FFT_SIZE> audio_accumulator{};  // 2048 samples (1920 used + 128 zero-padding for FFT)
     size_t audio_accumulator_pos{0};
     uint32_t slot_count{0};
 
     // Message handlers
     void capture_config(const CaptureConfigMessage& message);
+    void configure_threshold(const FT8ConfigureMessage& message);
     buffer_f32_t demodulate(const buffer_c16_t& channel);
 
     // FT8 processing
     void process_ft8_audio(const buffer_f32_t& audio);
     void decode_ft8_slot();
-    void send_ft8_messages();        // Send decoded messages to M0
 
     /* NB: Threads should be the last members in the class definition. */
     BasebandThread baseband_thread{baseband_fs, this, baseband::Direction::Receive};
