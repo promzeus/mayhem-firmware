@@ -77,7 +77,7 @@ FT8RxView::FT8RxView(NavigationView& nav)
 
     // Set sampling rates for FT8 (DO NOT call set_modulation - it replaces FT8 baseband!)
     receiver_model.set_sampling_rate(3072000);  // 3.072 MHz
-    receiver_model.set_baseband_bandwidth(1750000);  // 1.75 MHz
+    receiver_model.set_baseband_bandwidth(15000);  // 15 kHz - narrow filter for FT8 (was 1.75 MHz!)
 
     // Enable receiver
     receiver_model.enable();
@@ -123,24 +123,9 @@ void FT8RxView::on_ft8_packet(const FT8PacketMessage* message) {
 
     // Check debug message types
     if (strcmp(message->call_from, "AUD") == 0) {
-        // Audio/FFT debug: AUD peak=x.xx power=y.yy
-        // FT8PacketMessage(from, to, grid, snr=audio_peak_x100, time_slot=fft_power_x100)
-        // Show RAW values (before /100) to debug why they're empty
-        line = "AUD raw[";
-        line += to_string_dec_int(message->snr, 4);      // snr (int8_t) raw value
-        line += ",";
-        line += to_string_dec_uint(message->time_slot, 3); // time_slot (uint8_t) raw value
-        line += "] pk=";
-
-        float audio_peak = message->snr / 100.0f;
-        float fft_power = message->time_slot / 100.0f;
-
-        char pk_buf[8], pwr_buf[8];
-        snprintf(pk_buf, sizeof(pk_buf), "%.2f", audio_peak);
-        snprintf(pwr_buf, sizeof(pwr_buf), "%.2f", fft_power);
-        line += pk_buf;
-        line += " pwr=";
-        line += pwr_buf;
+        // Audio/FFT debug - values too small due to 0.01x attenuation
+        // Skip AUD message - not useful with current gain settings
+        return;
     }
     else if (strcmp(message->call_from, "MAX") == 0) {
         // Show waterfall maximum with visual bar
