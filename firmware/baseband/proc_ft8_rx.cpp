@@ -114,20 +114,17 @@ void FT8RxProcessor::decode_ft8_slot() {
     // Send each decoded message's raw payload to the application (M0) for decoding & display
     // Message decoding (ftx_message_decode) is done on the M0 side to save baseband flash space
     for (int i = 0; i < decoder_state.num_messages; i++) {
-        // Pack raw 10-byte payload into FT8PacketMessage char fields
-        // call_from[0..9] = raw payload bytes, call_from[10..12] = 0
-        // call_to[0] = 0xFF marker (indicates raw payload, not decoded text)
-        // snr = sync score
-        char raw_from[13] = {0};
-        memcpy(raw_from, decoder_state.messages[i].payload, FTX_PAYLOAD_LENGTH_BYTES);
-
-        char raw_to[13] = {0};
-        raw_to[0] = '\xff';  // Raw payload marker
-
+        // Pack raw 10-byte payload into FT8PacketMessage fields using memcpy
+        // IMPORTANT: Cannot pass raw bytes through the constructor — it uses strncpy
+        // which stops at 0x00 bytes, corrupting the binary payload.
         int8_t score = (int8_t)(decoder_state.message_scores[i] > 127
                                     ? 127
                                     : decoder_state.message_scores[i]);
-        FT8PacketMessage msg{raw_from, raw_to, "", score, 0};
+        FT8PacketMessage msg{"", "", "", score, 0};
+        // Overwrite call_from[0..9] with raw payload bytes (bypasses strncpy)
+        memcpy(msg.call_from, decoder_state.messages[i].payload, FTX_PAYLOAD_LENGTH_BYTES);
+        // Set raw payload marker in call_to[0]
+        msg.call_to[0] = '\xff';
         shared_memory.application_queue.push(msg);
     }
 
