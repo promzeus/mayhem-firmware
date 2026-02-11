@@ -587,8 +587,6 @@ set(MODE_CPPSRC
 	ft8_lib/ft8_portapack.c
 	ft8_lib/ldpc.c
 	ft8_lib/ldpc_opt.c
-	ft8_lib/message.c
-	ft8_lib/text.c
 )
 # Optimize for size to fit in 32KB external app limit
 set(MODE_FLAGS "-Os")

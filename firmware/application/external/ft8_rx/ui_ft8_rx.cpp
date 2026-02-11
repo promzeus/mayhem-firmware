@@ -28,6 +28,11 @@
 #include "portapack_shared_memory.hpp"
 #include <cstring>
 
+// FT8 message decoding (compiled on M0 side to save M4 baseband flash)
+extern "C" {
+#include "../baseband/ft8_lib/message.h"
+}
+
 using namespace portapack;
 
 namespace ui::external_app::ft8_rx {
@@ -121,75 +126,56 @@ void FT8RxView::on_threshold_change(int32_t value) {
 void FT8RxView::on_ft8_packet(const FT8PacketMessage* message) {
     std::string line;
 
-    // Check debug message types
-    if (strcmp(message->call_from, "AUD") == 0) {
-        // Audio/FFT debug - values too small due to 0.01x attenuation
-        // Skip AUD message - not useful with current gain settings
+    // Check for raw payload marker (0xFF in call_to[0])
+    // Baseband sends raw 10-byte ftx_message_t payload; we decode it here on M0
+    if (message->call_to[0] == '\xff') {
+        // Reconstruct ftx_message_t from raw bytes in call_from[0..9]
+        ftx_message_t ftx_msg;
+        memcpy(ftx_msg.payload, message->call_from, FTX_PAYLOAD_LENGTH_BYTES);
+        ftx_msg.hash = 0;
+
+        // Decode to human-readable text
+        char text[FTX_MAX_MESSAGE_LENGTH];
+        memset(text, 0, sizeof(text));
+        ftx_message_offsets_t offsets;
+
+        ftx_message_rc_t rc = ftx_message_decode(
+            &ftx_msg,
+            NULL,   // No hash interface — hashed calls show as <...>
+            text,
+            &offsets);
+
+        if (rc != FTX_MESSAGE_RC_OK) {
+            // Try free-text decode as fallback
+            ftx_message_decode_free(&ftx_msg, text);
+            if (text[0] == '\0') return;
+        }
+
+        // Format: "score text"
+        char snr_str[8];
+        snprintf(snr_str, sizeof(snr_str), "%+3d", message->snr);
+        line = snr_str;
+        line += " ";
+        line += text;
+
+        console.writeln(line);
         return;
     }
-    else if (strcmp(message->call_from, "MAX") == 0) {
-        // Show waterfall maximum with visual bar
-        // FT8PacketMessage(from, to, grid, snr=max_mag, time_slot=nonzero)
-        char bar[12];
-        int bar_len = (message->snr * 10) / 127;  // snr = max_mag
-        for (int i = 0; i < 10; i++) {
-            bar[i] = (i < bar_len) ? '#' : '-';
-        }
-        bar[10] = '\0';
 
-        line = "MAX +";
-        line += to_string_dec_uint(message->snr, 3);  // snr = max_mag
-        line += " [";
-        line += bar;
-        line += "] NZ:";
-        line += to_string_dec_uint(message->time_slot, 3);  // time_slot = nonzero
-    }
-    else if (strcmp(message->call_from, "CND") == 0) {
-        // Show candidates found and skip counter
-        // FT8PacketMessage(from, to, grid, snr=num_candidates, time_slot=skip_count)
+    // Debug message types (sent with plain text in call_from)
+    if (strcmp(message->call_from, "CND") == 0) {
         line = "CND: ";
-        line += to_string_dec_uint(message->snr, 2);  // snr = num_candidates
+        line += to_string_dec_uint(message->snr, 2);
 
-        if (message->time_slot > 0) {  // time_slot = skip_count
+        if (message->time_slot > 0) {
             line += " skip:";
             line += to_string_dec_uint(message->time_slot, 3);
         }
 
         line += " thr:";
         line += to_string_dec_uint(field_threshold.value(), 2);
+        console.writeln(line);
     }
-    else {
-        // Regular FT8 message
-        char time_str[8];
-        char snr_str[8];
-
-        // Format time
-        snprintf(time_str, sizeof(time_str), "%02d:%02d",
-                 message->time_slot / 60, message->time_slot % 60);
-
-        // Format SNR with sign
-        snprintf(snr_str, sizeof(snr_str), "%+3d", message->snr);
-
-        // Build the line
-        line = time_str;
-        line += " ";
-        line += snr_str;
-        line += " ";
-        line += message->call_from;
-
-        if (message->call_to[0] != '\0') {
-            line += " ";
-            line += message->call_to;
-        }
-
-        if (message->grid[0] != '\0') {
-            line += " ";
-            line += message->grid;
-        }
-    }
-
-    // Display in console
-    console.writeln(line);
 }
 
 }  // namespace ui::external_app::ft8_rx

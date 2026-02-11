@@ -111,60 +111,28 @@ void FT8RxProcessor::decode_ft8_slot() {
     // Run FT8 decoder on the collected waterfall data
     ft8_portapack_decode(&decoder_state);
 
-    // Send each decoded message to the application (M0) for display
+    // Send each decoded message's raw payload to the application (M0) for decoding & display
+    // Message decoding (ftx_message_decode) is done on the M0 side to save baseband flash space
     for (int i = 0; i < decoder_state.num_messages; i++) {
-        // Decode the binary payload into human-readable text
-        // ftx_message_decode handles all FT8 message types (standard, free text, etc.)
-        char text[FTX_MAX_MESSAGE_LENGTH];  // 35 bytes
-        memset(text, 0, sizeof(text));
+        // Pack raw 10-byte payload into FT8PacketMessage char fields
+        // call_from[0..9] = raw payload bytes, call_from[10..12] = 0
+        // call_to[0] = 0xFF marker (indicates raw payload, not decoded text)
+        // snr = sync score
+        char raw_from[13] = {0};
+        memcpy(raw_from, decoder_state.messages[i].payload, FTX_PAYLOAD_LENGTH_BYTES);
 
-        // offsets struct is required (ftx_message_decode dereferences it unconditionally)
-        ftx_message_offsets_t offsets;
+        char raw_to[13] = {0};
+        raw_to[0] = '\xff';  // Raw payload marker
 
-        ftx_message_rc_t rc = ftx_message_decode(
-            &decoder_state.messages[i],
-            NULL,       // No hash interface — hashed calls show as <...>
-            text,
-            &offsets);
-
-        if (rc != FTX_MESSAGE_RC_OK) {
-            // If full decode fails, try free-text decode as fallback
-            ftx_message_decode_free(&decoder_state.messages[i], text);
-            if (text[0] == '\0') continue;  // Nothing to show
-        }
-
-        // Parse the decoded text into fields for FT8PacketMessage
-        // Standard FT8 format: "CALL_TO CALL_FROM EXTRA"
-        // Examples: "CQ W9XYZ EN42", "K1ABC W9XYZ -15", "W9XYZ K1ABC RR73"
-        char field1[14] = {0};  // call_to (CQ, callsign)
-        char field2[14] = {0};  // call_from (callsign)
-        char field3[7] = {0};   // extra (grid, report)
-
-        const char* p = text;
-        char* fields[] = {field1, field2, field3};
-        int maxlen[] = {13, 13, 6};
-
-        for (int f = 0; f < 3 && *p; f++) {
-            while (*p == ' ') p++;
-            int j = 0;
-            while (*p && *p != ' ' && j < maxlen[f]) {
-                fields[f][j++] = *p++;
-            }
-            while (*p && *p != ' ') p++;  // skip remainder of long token
-        }
-
-        // Map: field1=to, field2=from, field3=extra
-        // FT8PacketMessage(from, to, grid, snr, time_slot)
         int8_t score = (int8_t)(decoder_state.message_scores[i] > 127
                                     ? 127
                                     : decoder_state.message_scores[i]);
-        FT8PacketMessage msg{field2, field1, field3, score, 0};
+        FT8PacketMessage msg{raw_from, raw_to, "", score, 0};
         shared_memory.application_queue.push(msg);
     }
 
     // Also send debug info: candidates found, max magnitude
     if (decoder_state.num_candidates > 0 || decoder_state.max_magnitude > 0) {
-        // Use "CND" debug tag (recognized by UI)
         FT8PacketMessage dbg{
             "CND", "",  "",
             (int8_t)(decoder_state.num_candidates > 127 ? 127 : decoder_state.num_candidates),

@@ -268,6 +268,9 @@ set(EXTCPPSRC
 	#ft8_rx
 	external/ft8_rx/main.cpp
 	external/ft8_rx/ui_ft8_rx.cpp
+	# ft8_lib message decoding (moved from baseband to save M4 flash)
+	../baseband/ft8_lib/message.c
+	../baseband/ft8_lib/text.c
 )
 
 set(EXTAPPLIST
