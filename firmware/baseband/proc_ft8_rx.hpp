@@ -28,6 +28,8 @@
 
 #include "dsp_decimate.hpp"
 #include "dsp_demodulate.hpp"
+#include "dsp_iir.hpp"
+#include "dsp_iir_config.hpp"
 #include "audio_output.hpp"
 #include "spectrum_collector.hpp"
 
@@ -81,10 +83,9 @@ class FT8RxProcessor : public BasebandProcessor {
     int32_t channel_filter_high_f{0};
     int32_t channel_filter_transition{0};
 
-    // FT8 decoder state and buffers
+    // FT8 decoder state
+    // No audio_accumulator needed — Goertzel processes samples incrementally
     ft8_decoder_state_t decoder_state{};
-    std::array<float, FT8_FFT_SIZE> audio_accumulator{};  // 2048 samples (1920 used + 128 zero-padding for FFT)
-    size_t audio_accumulator_pos{0};
     uint32_t slot_count{0};
 
     // Message handlers

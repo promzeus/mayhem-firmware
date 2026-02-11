@@ -26,19 +26,21 @@
 #include "dsp_iir_config.hpp"
 #include "event_m4.hpp"
 
+#include <cstring>
+
 FT8RxProcessor::FT8RxProcessor() {
     // Use same filters as AFSK RX (11kHz, 24kHz output) for better data flow
     decim_0.configure(taps_11k0_decim_0.taps);
     decim_1.configure(taps_11k0_decim_1.taps);
     channel_filter.configure(taps_11k0_channel.taps, 2);  // decimation=2 gives 24kHz
 
-    // Configure channel_filter parameters for spectrum display (like AFSK RX)
+    // Configure channel_filter parameters for spectrum display
     constexpr size_t channel_filter_input_fs = decim_1_output_fs;  // 48 kHz
     channel_filter_low_f = taps_11k0_channel.low_frequency_normalized * channel_filter_input_fs;
     channel_filter_high_f = taps_11k0_channel.high_frequency_normalized * channel_filter_input_fs;
     channel_filter_transition = taps_11k0_channel.transition_normalized * channel_filter_input_fs;
 
-    // Configure audio output without processing - let audio pass through clean
+    // Configure audio output without processing
     audio_output.configure(false);
 
     ft8_portapack_init(&decoder_state);
@@ -56,22 +58,16 @@ void FT8RxProcessor::execute(const buffer_c8_t& buffer) {
     const auto decim_0_out = decim_0.execute(buffer, dst_buffer);
     const auto decim_1_out = decim_1.execute(decim_0_out, dst_buffer);
     channel_spectrum.feed(decim_1_out, channel_filter_low_f, channel_filter_high_f, channel_filter_transition);
-    // No decim_2 - go directly to channel_filter (like AFSK RX)
     const auto channel_out = channel_filter.execute(decim_1_out, dst_buffer);
     feed_channel_stats(channel_out);
     auto audio = demodulate(channel_out);
-    // Pre-attenuate audio from SSB demodulator BEFORE FT8 processing
-    // User has MAX=127 saturation even with low FT8_INPUT_GAIN - SSB output is too hot!
-    for (size_t i = 0; i < audio.count; i++) {
-        audio.p[i] *= 0.1f;  // Reduce SSB output by 10x before FT8 decoder
-    }
-    // Process FT8 first - FFT needs clean unmodified signal
+
+    // Feed audio to FT8 decoder BEFORE any gain/clipping for headphones
     process_ft8_audio(audio);
-    // Apply gain with limiting for headphones (no AGC to save flash space)
-    // 4x gain with soft clip prevents distortion
+
+    // Apply 2x gain for headphones and recording
     for (size_t i = 0; i < audio.count; i++) {
-        float sample = audio.p[i] * 4.0f;
-        // Soft limiting at ±1.0 to prevent clipping
+        float sample = audio.p[i] * 2.0f;
         if (sample > 1.0f) sample = 1.0f;
         if (sample < -1.0f) sample = -1.0f;
         audio.p[i] = sample;
@@ -85,89 +81,99 @@ buffer_f32_t FT8RxProcessor::demodulate(const buffer_c16_t& channel) {
 }
 
 void FT8RxProcessor::process_ft8_audio(const buffer_f32_t& audio) {
-    static bool decimate_phase = false;    // Toggle for 24→12 kHz decimation
+    // Software 2:1 decimation: 24kHz → 12kHz
+    // The channel filter (11kHz passband) already bandlimits adequately
+    // so aliasing from the decimation is minimal in the FT8 band (200-3000 Hz)
+    static bool decimate_phase = false;
 
     for (size_t i = 0; i < audio.count; i++) {
         float sample = audio.p[i];
 
-        // Software decimation 24kHz → 12kHz: take every 2nd sample to save memory
+        // 2:1 decimation — skip every other sample
         decimate_phase = !decimate_phase;
-        if (!decimate_phase) continue;  // Skip odd samples (simple 2:1 decimation)
+        if (!decimate_phase) continue;
 
-        // Software gain stage: EXTREMELY LOW gain prevents clipping
-        // 0.1x gain - user has MAX=127 even with 0.25x at LNA=8 VGA=8!
-        constexpr float FT8_INPUT_GAIN = 0.1f;  // 20x less than original 2.0
-        float amplified = sample * FT8_INPUT_GAIN;
+        // NaN/Inf protection
+        if (sample != sample) sample = 0.0f;
 
-        // Saturation clipping to prevent FFT overflow
-        if (amplified > 1.0f) amplified = 1.0f;
-        if (amplified < -1.0f) amplified = -1.0f;
+        // Feed sample directly to Goertzel filters (incremental, no accumulator needed)
+        // Returns true when 79 symbols (one FT8 slot = 12.64s) are complete
+        bool slot_complete = ft8_portapack_feed_sample(&decoder_state, sample);
 
-        // NaN/Inf protection (critical for FFT stability)
-        if (amplified != amplified) amplified = 0.0f;  // NaN check (NaN != NaN is true)
-
-        audio_accumulator[audio_accumulator_pos++] = amplified;
-
-        // Process FFT every 1920 samples (one FT8 symbol = 160ms @ 12kHz)
-        if (audio_accumulator_pos >= FT8_SAMPLES_PER_SYMBOL) {
-            // Zero-padding to 2048 is handled inside ft8_portapack_process_audio()
-            bool slot_complete = ft8_portapack_process_audio(
-                &decoder_state, audio_accumulator.data(), audio_accumulator_pos);
-            audio_accumulator_pos = 0;
-
-            if (slot_complete) {
-                decode_ft8_slot();
-                slot_count++;
-            }
+        if (slot_complete) {
+            decode_ft8_slot();
+            slot_count++;
         }
     }
 }
 
 void FT8RxProcessor::decode_ft8_slot() {
-    // Run FT8 decoder
+    // Run FT8 decoder on the collected waterfall data
     ft8_portapack_decode(&decoder_state);
 
-    // Minimal debug (3 messages) to fit 32KB limit
-    // 1. Audio input debug (with clamping for int8_t/uint8_t safety)
-    int audio_peak_x100 = (int)(decoder_state.debug_audio_peak * 100.0f);
-    int fft_power_x100 = (int)(decoder_state.debug_fft_power * 100.0f);
-    // Clamp to valid ranges: snr=int8_t(-128..127), time_slot=uint8_t(0..255)
-    if (audio_peak_x100 > 127) audio_peak_x100 = 127;
-    if (audio_peak_x100 < -128) audio_peak_x100 = -128;
-    if (fft_power_x100 > 255) fft_power_x100 = 255;
-    if (fft_power_x100 < 0) fft_power_x100 = 0;
-    FT8PacketMessage audio_debug("AUD", "", "", audio_peak_x100, fft_power_x100);
-    shared_memory.application_queue.push(audio_debug);
+    // Send each decoded message to the application (M0) for display
+    for (int i = 0; i < decoder_state.num_messages; i++) {
+        // Decode the binary payload into human-readable text
+        // ftx_message_decode handles all FT8 message types (standard, free text, etc.)
+        char text[FTX_MAX_MESSAGE_LENGTH];  // 35 bytes
+        memset(text, 0, sizeof(text));
 
-    // 2. Waterfall magnitude stats
-    int total = decoder_state.waterfall.num_blocks * decoder_state.waterfall.block_stride;
-    int max_mag = 0;
-    int nonzero = 0;
-    for (int i = 0; i < total; i++) {
-        int mag = decoder_state.waterfall.mag[i];
-        if (mag > max_mag) max_mag = mag;
-        if (mag > 0) nonzero++;
+        // offsets struct is required (ftx_message_decode dereferences it unconditionally)
+        ftx_message_offsets_t offsets;
+
+        ftx_message_rc_t rc = ftx_message_decode(
+            &decoder_state.messages[i],
+            NULL,       // No hash interface — hashed calls show as <...>
+            text,
+            &offsets);
+
+        if (rc != FTX_MESSAGE_RC_OK) {
+            // If full decode fails, try free-text decode as fallback
+            ftx_message_decode_free(&decoder_state.messages[i], text);
+            if (text[0] == '\0') continue;  // Nothing to show
+        }
+
+        // Parse the decoded text into fields for FT8PacketMessage
+        // Standard FT8 format: "CALL_TO CALL_FROM EXTRA"
+        // Examples: "CQ W9XYZ EN42", "K1ABC W9XYZ -15", "W9XYZ K1ABC RR73"
+        char field1[14] = {0};  // call_to (CQ, callsign)
+        char field2[14] = {0};  // call_from (callsign)
+        char field3[7] = {0};   // extra (grid, report)
+
+        const char* p = text;
+        char* fields[] = {field1, field2, field3};
+        int maxlen[] = {13, 13, 6};
+
+        for (int f = 0; f < 3 && *p; f++) {
+            while (*p == ' ') p++;
+            int j = 0;
+            while (*p && *p != ' ' && j < maxlen[f]) {
+                fields[f][j++] = *p++;
+            }
+            while (*p && *p != ' ') p++;  // skip remainder of long token
+        }
+
+        // Map: field1=to, field2=from, field3=extra
+        // FT8PacketMessage(from, to, grid, snr, time_slot)
+        int8_t score = (int8_t)(decoder_state.message_scores[i] > 127
+                                    ? 127
+                                    : decoder_state.message_scores[i]);
+        FT8PacketMessage msg{field2, field1, field3, score, 0};
+        shared_memory.application_queue.push(msg);
     }
-    // Clamp to valid ranges: snr=int8_t(-128..127), time_slot=uint8_t(0..255)
-    if (max_mag > 127) max_mag = 127;
-    if (max_mag < -128) max_mag = -128;
-    if (nonzero > 255) nonzero = 255;
-    FT8PacketMessage wf_stats("MAX", "", "", max_mag, nonzero);
-    shared_memory.application_queue.push(wf_stats);
 
-    // 3. Candidates stats
-    // Clamp to valid ranges: snr=int8_t(-128..127), time_slot=uint8_t(0..255)
-    int num_cand = decoder_state.num_candidates;
-    int skip_cnt = decoder_state.skip_count;
-    if (num_cand > 127) num_cand = 127;
-    if (num_cand < -128) num_cand = -128;
-    if (skip_cnt > 255) skip_cnt = 255;
-    FT8PacketMessage decode_stats("CND", "", "", num_cand, skip_cnt);
-    shared_memory.application_queue.push(decode_stats);
+    // Also send debug info: candidates found, max magnitude
+    if (decoder_state.num_candidates > 0 || decoder_state.max_magnitude > 0) {
+        // Use "CND" debug tag (recognized by UI)
+        FT8PacketMessage dbg{
+            "CND", "",  "",
+            (int8_t)(decoder_state.num_candidates > 127 ? 127 : decoder_state.num_candidates),
+            (uint8_t)(decoder_state.skip_count > 255 ? 255 : decoder_state.skip_count)};
+        shared_memory.application_queue.push(dbg);
+    }
 
     ft8_portapack_reset_slot(&decoder_state);
 }
-
 
 void FT8RxProcessor::on_message(const Message* const message) {
     switch (message->id) {
@@ -198,12 +204,11 @@ void FT8RxProcessor::capture_config(const CaptureConfigMessage& message) {
 }
 
 void FT8RxProcessor::configure_threshold(const FT8ConfigureMessage& message) {
-    // Update the FT8 decoder's min_score threshold
     ft8_portapack_set_min_score(&decoder_state, message.threshold);
 }
 
 int main() {
-    audio::dma::init_audio_out();  // CRITICAL: Initialize audio DMA for headphone output
+    audio::dma::init_audio_out();
 
     EventDispatcher event_dispatcher{std::make_unique<FT8RxProcessor>()};
     event_dispatcher.run();
